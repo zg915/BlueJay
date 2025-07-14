@@ -11,3 +11,5 @@ httpx
 loguru
 anyio>=4.5.0
 starlette>=0.37.0
+openai-agents
+aiohttp
