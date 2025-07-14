@@ -350,22 +350,6 @@ def synthesize_results(results: list[str]):
     """
     return "\n".join(str(r) for r in results)
 
-@function_tool
-def input_moderation(text: str):
-    banned_keywords = ["badword1", "badword2"]
-    for word in banned_keywords:
-        if word in text.lower():
-            raise ValueError("Input contains inappropriate content.")
-    return True
-
-@function_tool
-def output_moderation(text: str):
-    banned_keywords = ["badword1", "badword2"]
-    for word in banned_keywords:
-        if word in text.lower():
-            raise ValueError("Output contains inappropriate content.")
-    return True
-
 # Internal async functions for DB operations (not decorated)
 async def store_message_db(user_id: str, session_id: str, content: str, db, role: str = "user", reply_to: str = None):
     return await add_chat_message(db, user_id, session_id, content, role=role, reply_to=reply_to)
