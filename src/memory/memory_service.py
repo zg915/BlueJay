@@ -4,7 +4,7 @@ Handles fetching and storing recent context for user sessions.
 """
 
 import os
-import openai
+from openai import OpenAI
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database.services import (
     get_last_n_messages,
@@ -13,7 +13,7 @@ from src.database.services import (
 )
 
 # Fetch last 10 messages and latest summary for a session
-async def get_recent_context(db: AsyncSession, session_id: str):
+async def get_recent_context(db: AsyncSession, session_id: str, history_length: int = 9):
     """
     Fetches the latest summary and last 10 messages after the summary for the session.
     Returns formatted context suitable for AI agents.
@@ -24,7 +24,7 @@ async def get_recent_context(db: AsyncSession, session_id: str):
     up_to_order = summary_obj.up_to_message_order if summary_obj else 0
     
     # Get last 10 messages after the summary
-    messages = await get_last_n_messages(db, session_id, 10)
+    messages = await get_last_n_messages(db, session_id, history_length)
     
     # Format messages for better readability
     formatted_messages = []
@@ -55,7 +55,7 @@ async def store_context(db: AsyncSession, session_id: str):
         # Concatenate all messages
         conversation_text = "\n".join([msg.content for msg in all_messages])
         # Generate summary using OpenAI LLM with new API format
-        from openai import OpenAI
+
         client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         prompt = f"Summarize the following conversation:\n{conversation_text}"
         response = client.chat.completions.create(

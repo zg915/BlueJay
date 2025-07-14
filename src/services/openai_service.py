@@ -17,11 +17,11 @@ class OpenAIService:
         self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
         self.model = "gpt-4o-mini"  # Use a cost-effective model
     
-    async def stream_openai_response(self, prompt: str, user_id: str, session_id: str) -> str:
+    async def stream_openai_response(self, prompt: str, session_id: str) -> str:
         """
         Stream OpenAI response for processing raw results
         """
-        print(f"🚀 Starting OpenAI streaming for user {user_id}, session {session_id}")
+        print(f"🚀 Starting OpenAI streaming for session {session_id}")
         
         try:
             # Create the streaming response
@@ -121,6 +121,6 @@ class OpenAIService:
 openai_service = OpenAIService()
 
 
-async def stream_openai_response(prompt: str, user_id: str, session_id: str) -> str:
+async def stream_openai_response(prompt: str, session_id: str) -> str:
     """Convenience function to stream OpenAI response"""
-    return await openai_service.stream_openai_response(prompt, user_id, session_id) 
+    return await openai_service.stream_openai_response(prompt, session_id) 

@@ -351,11 +351,11 @@ def synthesize_results(results: list[str]):
     return "\n".join(str(r) for r in results)
 
 # Internal async functions for DB operations (not decorated)
-async def store_message_db(user_id: str, session_id: str, content: str, db, role: str = "user", reply_to: str = None):
-    return await add_chat_message(db, user_id, session_id, content, role=role, reply_to=reply_to)
+async def store_message_db(session_id: str, content: str, db, role: str = "user", reply_to: str = None):
+    return await add_chat_message(db, session_id, content, role=role, reply_to=reply_to)
 
-async def get_recent_context_db(db, session_id: str):
-    return await memory_get_recent_context(db, session_id)
+async def get_recent_context_db(db, session_id: str, chat_length: int):
+    return await memory_get_recent_context(db, session_id, chat_length)
 
 async def store_final_response_db(user_id: str, session_id: str, response: str, db):
     # Final response storage removed - this function is now a no-op

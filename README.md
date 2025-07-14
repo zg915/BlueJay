@@ -164,7 +164,6 @@ POST /chat/stream
 Content-Type: application/json
 
 {
-  "user_id": "user123",
   "session_id": "session456",
   "message": "List all certifications required to export electronics from India to the US"
 }
@@ -176,7 +175,6 @@ POST /chat/simple
 Content-Type: application/json
 
 {
-  "user_id": "user123",
   "session_id": "session456",
   "message": "What is ISO 9001 certification?"
 }

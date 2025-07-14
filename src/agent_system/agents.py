@@ -11,13 +11,10 @@ class CertificationWorkflowAgent(Agent):
     def __init__(self, orchestrator):
         super().__init__(
             name="Certification workflow agent",
-            instructions="""You are a certification workflow agent. 
-Your job is to process certification-related queries and return detailed certification information.
-When called, you will receive an enhanced query and should return comprehensive certification results.
-Always return structured data that can be processed by the main system."""
+            instructions=""
         )
         self.orchestrator = orchestrator
-
+    #TODO: print and check if the enhanced_query, context are correct
     async def run(self, enhanced_query, context=None, db=None):
         """Execute certification workflow and return results"""
         print(f"🔧 CertificationWorkflowAgent.run() called with query: {enhanced_query}")
@@ -33,6 +30,7 @@ Always return structured data that can be processed by the main system."""
                 except:
                     context = {}
             
+            #TODO: do we really need to worry this part?
             # If db is not provided, we'll need to handle this
             if db is None:
                 print("⚠️ No database session provided, using mock context")

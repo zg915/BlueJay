@@ -16,6 +16,20 @@ from src.agent_system.tools import (
 from agents import Agent, handoff, Runner
 import asyncio
 
+#TODO: move it somewhere else?
+from pydantic import BaseModel, Field
+class CertificationAgentArgs(BaseModel):
+    """
+    Arguments required by the CertificationWorkflowAgent.
+    """
+    enhanced_query: str = Field(
+        ...,
+        description=(
+            "A clarified, context-rich version of the user’s original question. "
+            "Should normalize terminology, add jurisdiction/product context, etc."
+        )
+    )
+
 def log_with_time(message):
     """Log message with timestamp"""
     timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
@@ -112,35 +126,43 @@ class WorkflowOrchestrator:
         self.triage_agent = Agent(
             name="Triage agent",
             instructions=TRIAGE_AGENT_PROMPT,
+            #TODO: handle the filter input, tool description override
             handoffs=[
-                handoff(self.certification_agent, tool_name_override="transfer_to_certification_workflow"),
+                handoff(self.certification_agent,
+                        tool_name_override="transfer_to_certification_workflow",
+                        tool_description_override="TODO",
+                        input_type=CertificationAgentArgs),
                 handoff(self.research_agent, tool_name_override="transfer_to_research_workflow")
             ]
         )
         print("✅ WorkflowOrchestrator initialized successfully")
 
-    async def handle_user_question(self, user_id: str, session_id: str, message: str, db: AsyncSession):
+    async def handle_user_question(self, session_id: str, message: str, db: AsyncSession):
         """
         Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → OpenAI streaming
         """
-        print(f"\n🚀 Starting workflow for user: {user_id}, session: {session_id}")
+        print(f"\n🚀 Starting workflow for session: {session_id}")
         print(f"📝 User message: {message}")
         try:
             # Pre-hooks: mandatory steps
             print("🔍 Running pre-hooks...")
+            #TODO: this should never be triggered, if ever triggered, just pop 500 internal error
             validate_input(message)
             print("✅ Input validation passed")
-            input_moderation(message)
-            print("✅ Input moderation passed")
+
             # Store the user message and get the message object
-            user_message_obj = await store_message_db(user_id, session_id, message, db)
+            user_message_obj = await store_message_db(session_id,message, db, "user")
             print("✅ Message stored in database")
             message_id = getattr(user_message_obj, 'message_id', None)
+            #TODO: if the message is harmful, save the message to db (role:assistant, content: "HARMFUL", "type": "Harmful")
+            input_moderation(message)
+            print("✅ Input moderation passed")
             # Load last 5 messages for context
             context = await get_recent_context_db(db, session_id)
             print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
             # Run triage agent (which will handoff automatically)
             print("\n🎯 Running triage agent with handoffs...")
+            #TODO: change the input to formal structure
             triage_input = f"Message: {message}\nContext: {context}"
             print(f"📤 Triage input: {triage_input[:200]}...")
             
@@ -180,7 +202,7 @@ class WorkflowOrchestrator:
                         print(f"📝 Structured data from workflow agent: {parsed}")
                         final_result = await self._stream_openai_response(
                             parsed if isinstance(parsed, list) else [parsed], 
-                            message, user_id, session_id, db, message_id
+                            message, session_id, db, message_id
                         )
                         return final_result
                 except json.JSONDecodeError:
@@ -191,7 +213,7 @@ class WorkflowOrchestrator:
                 # Structured data that needs processing
                 print(f"📝 List of results from workflow agent: {len(workflow_output)} items")
                 final_result = await self._stream_openai_response(
-                    workflow_output, message, user_id, session_id, db, message_id
+                    workflow_output, message, session_id, db, message_id
                 )
                 return final_result
             else:
@@ -459,7 +481,7 @@ class WorkflowOrchestrator:
         # Use the existing synthesis function
         return synthesize_results(result_strings)
     
-    async def _stream_openai_response(self, raw_results: list, original_query: str, user_id: str, session_id: str, db: AsyncSession, message_id: str):
+    async def _stream_openai_response(self, raw_results: list, original_query: str, session_id: str, db: AsyncSession, message_id: str):
         """
         Stream OpenAI response for deduplication and synthesis of raw results, expecting a JSON array of objects in a specific format.
         """
@@ -500,7 +522,7 @@ Raw Results ({len(raw_results)} items):
             # Call OpenAI with streaming
             from src.services.openai_service import stream_openai_response
             print("🤖 Calling OpenAI streaming service...")
-            response_text = await stream_openai_response(prompt, user_id, session_id)
+            response_text = await stream_openai_response(prompt, session_id)
             print(f"✅ OpenAI streaming completed, response length: {len(response_text)} characters")
             print(f"📝 OpenAI response: '{response_text}'")
             

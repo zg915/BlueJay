@@ -88,7 +88,7 @@ async def get_chat_session(session: AsyncSession, session_id: str):
     return chat_session
 
 # --- Chat Messages ---
-async def add_chat_message(session: AsyncSession, user_id: str, session_id: str, content: str, role: str = "user", reply_to: str = None):
+async def add_chat_message(session: AsyncSession, session_id: str, content: str, role: str = "user", reply_to: str = None):
     msg = ChatMessage(session_id=session_id, role=role, content=content, reply_to=reply_to)
     session.add(msg)
     await session.commit()
