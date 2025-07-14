@@ -46,88 +46,29 @@ print("✅ WorkflowOrchestrator initialized for endpoints")
 # Streaming chat endpoint
 async def chat_stream(request: ChatRequest, db: AsyncSession):
     """
-    Streaming chat endpoint that provides real-time updates
+    Streaming chat endpoint that provides real-time updates using the triage agent and agentic handoff system
     """
     print(f"\n📡 Streaming chat request received")
     print(f"👤 User: {request.user_id}")
     print(f"💬 Session: {request.session_id}")
     print(f"📝 Message: {request.message}")
-    
     try:
-        # Stream the workflow with real-time updates
-        async def generate():
-            # Send initial status
-            yield f"data: {json.dumps({'status': 'processing', 'message': 'Starting workflow...'})}\n\n"
-            
-            # Start the workflow and get raw results
-            raw_results = await orchestrator.handle_certification_list_workflow(
-                request.message, 
-                {'messages': []}, 
-                db
-            )
-            
-            yield f"data: {json.dumps({'status': 'searching', 'message': f'Found {len(raw_results)} raw results, processing with OpenAI...'})}\n\n"
-            
-            # Stream OpenAI response
-            from src.services.openai_service import openai_service
-            
-            # Format raw results for OpenAI
-            results_text = orchestrator._format_raw_results_for_openai(raw_results)
-            prompt = f"""
-You are an expert assistant. Given the following raw certification results, deduplicate and synthesize them into a list of JSON objects. 
-Each object must have the following fields:
-- certificate_name
-- certificate_description
-- legal_regulation
-- legal_text_excerpt
-- legal_text_meaning
-- registration_fee
-- is_required
-
-Return ONLY a JSON array of objects, no markdown, no explanation, no extra text.
-
-Original Query: {request.message}
-
-Raw Results ({len(raw_results)} items):
-{results_text}
-"""
-            
-            # Stream OpenAI response
-            stream = openai_service.client.chat.completions.create(
-                model=openai_service.model,
-                messages=[
-                    {"role": "system", "content": "You are a helpful assistant that processes and synthesizes search results. Provide clear, well-organized responses."},
-                    {"role": "user", "content": prompt}
-                ],
-                stream=True,
-                temperature=0.7,
-                max_tokens=2000
-            )
-            
-            # Collect the streaming response
-            full_response = ""
-            for chunk in stream:
-                if chunk.choices[0].delta.content is not None:
-                    content = chunk.choices[0].delta.content
-                    full_response += content
-                    # Stream each chunk
-                    yield f"data: {json.dumps({'status': 'streaming', 'chunk': content})}\n\n"
-            
-            # Parse the final JSON response
-            parsed_json = orchestrator._clean_and_parse_json_response(full_response)
-            
-            # Send final result
-            yield f"data: {json.dumps({'status': 'complete', 'response': parsed_json})}\n\n"
-            
-            # Send end marker
+        # Run the full workflow (triage agent + handoff)
+        result = await orchestrator.handle_user_question(
+            request.user_id,
+            request.session_id,
+            request.message,
+            db
+        )
+        # For streaming, just yield the result as a single event (or break into chunks if needed)
+        def generate():
+            yield f"data: {json.dumps({'status': 'complete', 'response': result})}\n\n"
             yield f"data: {json.dumps({'status': 'end'})}\n\n"
-        
         return StreamingResponse(
             generate(),
             media_type="text/plain",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
         )
-    
     except Exception as e:
         print(f"❌ Error in streaming chat: {e}")
         raise HTTPException(status_code=500, detail=str(e))

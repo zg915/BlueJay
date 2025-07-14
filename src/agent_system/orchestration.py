@@ -6,13 +6,14 @@ import json
 import time
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agent_system.agents import TriageAgent, ListGenerationAgent, ResearchAgent, DirectResponseAgent
+from src.agent_system.agents import CertificationWorkflowAgent, ResearchWorkflowAgent
+from src.config.prompts import TRIAGE_AGENT_PROMPT
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
 from src.agent_system.tools import (
     store_message_db, store_final_response_db, store_research_request_db,
     get_recent_context_db, store_context_db
 )
-from agents import Runner
+from agents import Agent, handoff, Runner
 import asyncio
 
 def log_with_time(message):
@@ -106,50 +107,39 @@ def print_timing_table(task_results):
 class WorkflowOrchestrator:
     def __init__(self):
         print("🔧 Initializing WorkflowOrchestrator...")
-        self.list_agent = ListGenerationAgent()
-        self.research_agent = ResearchAgent()
-        self.direct_agent = DirectResponseAgent()
-        
-        # Create triage agent with handoffs to specialized agents
-        self.triage_agent = TriageAgent(
-            certification_agent=self.list_agent,  # Use list agent for certification
-            research_agent=self.research_agent,
-            direct_agent=self.direct_agent
+        self.certification_agent = CertificationWorkflowAgent(self)
+        self.research_agent = ResearchWorkflowAgent(self)
+        self.triage_agent = Agent(
+            name="Triage agent",
+            instructions=TRIAGE_AGENT_PROMPT,
+            handoffs=[
+                handoff(self.certification_agent, tool_name_override="transfer_to_certification_workflow"),
+                handoff(self.research_agent, tool_name_override="transfer_to_research_workflow")
+            ]
         )
         print("✅ WorkflowOrchestrator initialized successfully")
 
     async def handle_user_question(self, user_id: str, session_id: str, message: str, db: AsyncSession):
         """
-        Main workflow orchestration: pre-hooks → triage → specialized agent → post-hooks
+        Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → OpenAI streaming
         """
         print(f"\n🚀 Starting workflow for user: {user_id}, session: {session_id}")
         print(f"📝 User message: {message}")
-        
         try:
             # Pre-hooks: mandatory steps
             print("🔍 Running pre-hooks...")
             validate_input(message)
             print("✅ Input validation passed")
-            
             input_moderation(message)
             print("✅ Input moderation passed")
-            
             # Store the user message and get the message object
             user_message_obj = await store_message_db(user_id, session_id, message, db)
             print("✅ Message stored in database")
             message_id = getattr(user_message_obj, 'message_id', None)
-            
             # Load last 5 messages for context
             context = await get_recent_context_db(db, session_id)
             print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
-            
-            # Log a sample of the messages for debugging
-            if context.get('messages'):
-                print(f"📝 Sample messages:")
-                for i, msg in enumerate(context['messages'][:5]):  # Show first 5 messages
-                    print(f"  {i+1}. [{msg['role']}]: {msg['content'][:100]}...")
-
-            # Triage: classify and enhance query with handoffs
+            # Run triage agent (which will handoff automatically)
             print("\n🎯 Running triage agent with handoffs...")
             triage_input = f"Message: {message}\nContext: {context}"
             print(f"📤 Triage input: {triage_input[:200]}...")
@@ -158,152 +148,63 @@ class WorkflowOrchestrator:
                 starting_agent=self.triage_agent,
                 input=triage_input
             )
-            print("✅ Triage agent completed")
+            print("✅ Triage agent (with handoff) completed")
+            print(f"📥 Triage result type: {type(triage_result)}")
+            print(f"📥 Triage result: {triage_result}")
             
-            triage_response = triage_result.final_output
-            print(f"📥 Triage response: {triage_response}")
+            # Debug: Check if the triage agent actually called a workflow agent
+            if hasattr(triage_result, 'last_agent'):
+                print(f"🔍 Last agent in chain: {triage_result.last_agent.name if triage_result.last_agent else 'None'}")
+            if hasattr(triage_result, 'raw_responses'):
+                print(f"🔍 Number of raw responses: {len(triage_result.raw_responses) if triage_result.raw_responses else 0}")
+                for i, response in enumerate(triage_result.raw_responses or []):
+                    print(f"🔍 Raw response {i+1}: {response}")
             
-            # Try to parse JSON with error handling
-            try:
-                # Clean up the response - remove markdown code blocks if present
-                cleaned_response = triage_response.strip()
-                if cleaned_response.startswith('```json'):
-                    # Remove the opening ```json and closing ```
-                    cleaned_response = cleaned_response.replace('```json', '').replace('```', '').strip()
-                elif cleaned_response.startswith('```'):
-                    # Remove any markdown code blocks
-                    cleaned_response = cleaned_response.replace('```', '').strip()
-                
-                print(f"🧹 Cleaned response: '{cleaned_response}'")
-                triage_data = json.loads(cleaned_response)
-                print(f"✅ JSON parsed successfully: {triage_data}")
-            except json.JSONDecodeError as e:
-                print(f"❌ JSON parsing failed: {e}")
-                print(f"🔍 Raw response: '{triage_response}'")
-                # Fallback to default values
-                triage_data = {
-                    "question_type": "simple question",
-                    "enhanced_query": message
-                }
-                print(f"🔄 Using fallback values: {triage_data}")
+            # The result is the output of the correct workflow agent
+            workflow_output = triage_result.final_output if hasattr(triage_result, 'final_output') else triage_result
+            print(f"📊 Workflow output type: {type(workflow_output)}")
+            print(f"📊 Workflow output length: {len(workflow_output) if isinstance(workflow_output, list) else 'N/A'}")
             
-            question_type = triage_data["question_type"]
-            enhanced_query = triage_data["enhanced_query"]
-            print(f"🎯 Question type: {question_type}")
-            print(f"🔍 Enhanced query: {enhanced_query}")
-
-            # Store enhanced query from triage (for all question types)
-            await store_research_request_db(session_id, enhanced_query, "", db, workflow_type=question_type, message_id=message_id)
-            print(f"✅ Enhanced query stored in research_requests table with workflow_type: {question_type}")
-
-            # Route to specialized agent based on question type
-            print(f"\n🤖 Routing to specialized agent...")
-            if question_type == "certification list" or "certification" in enhanced_query.lower():
-                print("📋 Using Certification List Agent")
-                raw_results = await self.handle_certification_list_workflow(enhanced_query, context, db)
-                print(f"📊 Got {len(raw_results)} raw certification results")
-                
-                # Pass raw results to OpenAI for streaming
-                print("🤖 Passing raw results to OpenAI for streaming...")
-                final_result = await self._stream_openai_response(raw_results, enhanced_query, user_id, session_id, db, message_id)
-                
-            elif question_type == "research request" or question_type == "list request":
-                print("🔬 Using General Research Agent")
-                raw_results = await self.handle_general_research_workflow(enhanced_query, context, db)
-                print(f"📊 Got {len(raw_results)} raw research results")
-                
-                # Pass raw results to OpenAI for streaming
-                print("🤖 Passing raw results to OpenAI for streaming...")
-                final_result = await self._stream_openai_response(raw_results, enhanced_query, user_id, session_id, db, message_id)
-                
-            else:  # simple question
-                print("💬 Using DirectResponseAgent")
-                # Execute direct response agent with enhanced query
-                print(f"🚀 Executing direct response agent...")
-                agent_input = f"Enhanced Query: {enhanced_query}\nContext: {context}"
-                print(f"📤 Agent input: {agent_input[:200]}...")
-                
-                result = await Runner.run(
-                    starting_agent=self.direct_agent,
-                    input=agent_input
+            # Handle different types of workflow output
+            if isinstance(workflow_output, str):
+                # If it's a string, it might be a JSON response or direct text
+                try:
+                    import json
+                    parsed = json.loads(workflow_output)
+                    if isinstance(parsed, dict) and 'content' in parsed:
+                        # This is a direct response from the workflow agent
+                        print(f"📝 Direct response from workflow agent: {parsed['content']}")
+                        return parsed['content']
+                    else:
+                        # This is structured data that needs processing
+                        print(f"📝 Structured data from workflow agent: {parsed}")
+                        final_result = await self._stream_openai_response(
+                            parsed if isinstance(parsed, list) else [parsed], 
+                            message, user_id, session_id, db, message_id
+                        )
+                        return final_result
+                except json.JSONDecodeError:
+                    # Not JSON, treat as direct text response
+                    print(f"📝 Direct text response from workflow agent: {workflow_output}")
+                    return workflow_output
+            elif isinstance(workflow_output, list):
+                # Structured data that needs processing
+                print(f"📝 List of results from workflow agent: {len(workflow_output)} items")
+                final_result = await self._stream_openai_response(
+                    workflow_output, message, user_id, session_id, db, message_id
                 )
-                print("✅ Direct response agent completed")
-                
-                final_result = result.final_output
-                print(f"📥 Final result: {final_result[:200]}...")
-
-            # After final_result is generated
-            # Convert final_result to string for DB storage if it's a list (JSON objects)
-            if isinstance(final_result, list):
-                db_content = json.dumps(final_result, ensure_ascii=False)
-                print(f"📝 Converting {len(final_result)} JSON objects to string for DB storage")
+                return final_result
             else:
-                db_content = str(final_result)
-            
-            assistant_message_obj = await store_message_db(user_id, session_id, db_content, db, role="assistant", reply_to=message_id)
-            print(f"✅ Assistant response stored in chat_messages with id: {getattr(assistant_message_obj, 'message_id', None)}")
-
-            # Post-hooks: mandatory steps
-            print(f"\n🔧 Running post-hooks...")
-            # For output moderation, convert list to string if needed
-            if isinstance(final_result, list):
-                moderation_text = json.dumps(final_result, ensure_ascii=False)
-                print(f"📝 Converting {len(final_result)} JSON objects to string for moderation")
-            else:
-                moderation_text = str(final_result)
-            
-            output_moderation(moderation_text)
-            print("✅ Output moderation passed")
-            
-            await store_final_response_db(user_id, session_id, final_result, db)
-            print("✅ Final response stored in database")
-
-            # Store context (may trigger summary generation)
-            await store_context_db(db, session_id)
-            print("✅ Context stored in database")
-
-            print(f"🎉 Workflow completed successfully!")
-            return final_result
-            
+                # Unknown type, return as is
+                print(f"📝 Unknown workflow output type: {type(workflow_output)}")
+                return str(workflow_output)
         except Exception as e:
-            print(f"❌ Error in workflow: {e}")
+            print(f"❌ Error in handle_user_question: {e}")
             import traceback
             print(f"🔍 Full traceback: {traceback.format_exc()}")
-            raise 
+            raise
 
-    async def handle_sophisticated_research(self, enhanced_query: str, context: dict, db: AsyncSession):
-        """
-        Structured research workflow that doesn't rely on agent prompts.
-        Forces the workflow to be followed step-by-step.
-        """
-        print(f"🔬 Starting sophisticated research workflow for: {enhanced_query}")
-        
-        # Step 1: Get domain metadata via RAG API
-        print("📚 Step 1: Getting domain metadata via RAG API...")
-        rag_result = await self._call_rag_api(enhanced_query)
-        print(f"✅ RAG API returned metadata with {len(rag_result.get('websites', []))} websites")
-        
-        # Step 2: Generate search queries
-        print("🔍 Step 2: Generating search queries...")
-        search_queries = await self._generate_search_queries(enhanced_query)
-        print(f"✅ Generated {len(search_queries)} search queries")
-        
-        # Step 3: Map queries to websites
-        print("🗺️ Step 3: Mapping queries to websites...")
-        query_website_mapping = await self._map_queries_to_websites(search_queries, rag_result)
-        print(f"✅ Mapped queries to {sum(len(websites) for websites in query_website_mapping.values())} website searches")
-        
-        # Step 4: Parallel web search
-        print("🌐 Step 4: Performing parallel web searches...")
-        search_results = await self._parallel_web_search(query_website_mapping)
-        print(f"✅ Completed {len(search_results)} parallel searches")
-        
-        # Step 5: Synthesize results
-        print("📝 Step 5: Synthesizing results...")
-        final_result = await self._synthesize_results(search_results, enhanced_query)
-        print(f"✅ Synthesized final result ({len(final_result)} characters)")
-        
-        return final_result
+
     
     async def handle_certification_list_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
         """
@@ -563,10 +464,15 @@ class WorkflowOrchestrator:
         Stream OpenAI response for deduplication and synthesis of raw results, expecting a JSON array of objects in a specific format.
         """
         print(f"🚀 Starting OpenAI streaming for {len(raw_results)} raw results...")
+        print(f"📊 Raw results type: {type(raw_results)}")
+        print(f"📊 Raw results length: {len(raw_results)}")
         
         try:
             # Convert raw results to a structured format for OpenAI
+            print("🔄 Converting raw results to structured format...")
             results_text = self._format_raw_results_for_openai(raw_results)
+            print(f"📝 Formatted results text length: {len(results_text)}")
+            print(f"📝 First 200 chars of formatted results: {results_text[:200]}...")
             
             # Create prompt for OpenAI (JSON format enforced)
             prompt = f"""
@@ -587,78 +493,110 @@ Original Query: {original_query}
 Raw Results ({len(raw_results)} items):
 {results_text}
 """
-            
             print(f"📤 Sending {len(raw_results)} results to OpenAI for JSON processing...")
+            print(f"📝 Prompt length: {len(prompt)}")
+            print(f"📝 First 300 chars of prompt: {prompt[:300]}...")
             
             # Call OpenAI with streaming
             from src.services.openai_service import stream_openai_response
+            print("🤖 Calling OpenAI streaming service...")
             response_text = await stream_openai_response(prompt, user_id, session_id)
             print(f"✅ OpenAI streaming completed, response length: {len(response_text)} characters")
+            print(f"📝 OpenAI response: '{response_text}'")
             
             # Clean and parse the JSON response
+            print("🧹 Cleaning and parsing OpenAI JSON response...")
             parsed_json = self._clean_and_parse_json_response(response_text)
             print(f"✅ Parsed OpenAI JSON, {len(parsed_json)} objects")
+            print(f"📊 Parsed JSON: {parsed_json}")
+            
             return parsed_json
             
         except Exception as e:
-            print(f"❌ Error in OpenAI streaming or JSON parsing: {e}")
-            # Fallback: return a simple formatted response
-            fallback_response = self._create_fallback_response(raw_results, original_query)
-            print(f"🔄 Using fallback response ({len(fallback_response)} characters)")
-            return fallback_response
+            print(f"❌ Error in OpenAI streaming: {e}")
+            import traceback
+            print(f"🔍 Full traceback: {traceback.format_exc()}")
+            raise
 
     def _clean_and_parse_json_response(self, response: str):
-        """Clean markdown/code block wrappers and parse JSON array from OpenAI response"""
-        import json
-        resp = response.strip()
-        if resp.startswith('```json'):
-            resp = resp[7:]
-        if resp.startswith('```'):
-            resp = resp[3:]
-        if resp.endswith('```'):
-            resp = resp[:-3]
-        resp = resp.strip()
+        """Clean and parse JSON response from OpenAI"""
+        print(f"🧹 Cleaning and parsing response: '{response}'")
+        
         try:
-            return json.loads(resp)
+            # Clean up the response - remove markdown code blocks if present
+            cleaned_response = response.strip()
+            print(f"📝 Original response length: {len(response)}")
+            
+            if cleaned_response.startswith('```json'):
+                # Remove the opening ```json and closing ```
+                cleaned_response = cleaned_response.replace('```json', '').replace('```', '').strip()
+                print("🧹 Removed markdown code blocks")
+            elif cleaned_response.startswith('```'):
+                # Remove any markdown code blocks
+                cleaned_response = cleaned_response.replace('```', '').strip()
+                print("🧹 Removed markdown code blocks")
+            
+            print(f"📝 Cleaned response: '{cleaned_response}'")
+            print(f"📝 Cleaned response length: {len(cleaned_response)}")
+            
+            if not cleaned_response or cleaned_response == "[]":
+                print("⚠️ Empty or invalid response, returning empty list")
+                return []
+            
+            # Try to parse JSON
+            import json
+            parsed_json = json.loads(cleaned_response)
+            print(f"✅ JSON parsed successfully: {type(parsed_json)}")
+            
+            if isinstance(parsed_json, list):
+                print(f"✅ Parsed {len(parsed_json)} objects from JSON array")
+                return parsed_json
+            elif isinstance(parsed_json, dict):
+                print("✅ Parsed single object, converting to list")
+                return [parsed_json]
+            else:
+                print(f"⚠️ Unexpected JSON type: {type(parsed_json)}")
+                return []
+                
+        except json.JSONDecodeError as e:
+            print(f"❌ JSON parsing failed: {e}")
+            print(f"🔍 Raw response: '{response}'")
+            return []
         except Exception as e:
-            print(f"❌ Failed to parse OpenAI JSON: {e}")
+            print(f"❌ Unexpected error in JSON parsing: {e}")
             return []
     
     def _format_raw_results_for_openai(self, raw_results: list) -> str:
         """Format raw results into a structured text for OpenAI processing"""
-        formatted_results = []
+        print(f"🔄 Formatting {len(raw_results)} raw results for OpenAI...")
         
-        for i, result in enumerate(raw_results, 1):
+        if not raw_results:
+            print("⚠️ No raw results to format")
+            return "No results found."
+        
+        formatted_results = []
+        for i, result in enumerate(raw_results):
+            print(f"📝 Processing result {i+1}/{len(raw_results)}: {type(result)}")
+            
             if isinstance(result, dict):
                 # Handle certification results
                 if 'certificate_name' in result:
-                    cert_name = result.get('certificate_name', 'Unknown')
-                    cert_desc = result.get('certificate_description', 'No description')
-                    is_required = result.get('is_required', False)
-                    requirement = "REQUIRED" if is_required else "OPTIONAL"
-                    
-                    formatted_results.append(f"{i}. Certificate: {cert_name}")
-                    formatted_results.append(f"   Description: {cert_desc}")
-                    formatted_results.append(f"   Status: {requirement}")
+                    formatted_results.append(f"{i+1}. Title: {result.get('certificate_name', 'Unknown')}")
+                    formatted_results.append(f"   Description: {result.get('certificate_description', 'No description')}")
+                    formatted_results.append(f"   Regulation: {result.get('legal_regulation', 'Unknown')}")
+                    formatted_results.append(f"   Required: {result.get('is_required', False)}")
                     formatted_results.append("")
-                
-                # Handle general research results
-                elif 'title' in result or 'content' in result:
-                    title = result.get('title', 'No title')
-                    content = result.get('content', 'No content')
-                    source = result.get('source', 'Unknown source')
-                    
-                    formatted_results.append(f"{i}. Title: {title}")
-                    formatted_results.append(f"   Content: {content}")
-                    formatted_results.append(f"   Source: {source}")
-                    formatted_results.append("")
-                
                 # Handle other result types
                 else:
-                    formatted_results.append(f"{i}. {str(result)}")
+                    formatted_results.append(f"{i+1}. {str(result)}")
                     formatted_results.append("")
+            else:
+                formatted_results.append(f"{i+1}. {str(result)}")
+                formatted_results.append("")
         
-        return "\n".join(formatted_results)
+        result_text = "\n".join(formatted_results)
+        print(f"✅ Formatted {len(raw_results)} results into {len(result_text)} characters")
+        return result_text
     
     def _create_fallback_response(self, raw_results: list, original_query: str) -> str:
         """Create a fallback response when OpenAI streaming fails"""

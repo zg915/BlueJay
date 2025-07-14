@@ -1,14 +1,5 @@
 from agents import Agent, handoff, function_tool
-from src.agent_system.tools import (
-    get_recent_context,
-    call_rag_api,
-    generate_search_queries,
-    map_queries_to_websites,
-    perplexity_domain_search,
-    create_parallel_queries,
-    run_parallel_queries,
-    synthesize_results
-)
+from src.agent_system.tools import get_recent_context
 from src.config.prompts import (
     TRIAGE_AGENT_PROMPT,
     LIST_GENERATION_AGENT_PROMPT,
@@ -16,47 +7,82 @@ from src.config.prompts import (
     DIRECT_RESPONSE_AGENT_PROMPT
 )
 
-# TriageAgent: Classifies question type with handoffs
-class TriageAgent(Agent):
-    def __init__(self, certification_agent=None, research_agent=None, direct_agent=None):
-        handoffs_list = []
-        if certification_agent:
-            handoffs_list.append(handoff(certification_agent, tool_name_override="transfer_to_certification_agent"))
-        if research_agent:
-            handoffs_list.append(handoff(research_agent, tool_name_override="transfer_to_research_agent"))
-        if direct_agent:
-            handoffs_list.append(handoff(direct_agent, tool_name_override="transfer_to_direct_agent"))
+class CertificationWorkflowAgent(Agent):
+    def __init__(self, orchestrator):
+        super().__init__(
+            name="Certification workflow agent",
+            instructions="""You are a certification workflow agent. 
+Your job is to process certification-related queries and return detailed certification information.
+When called, you will receive an enhanced query and should return comprehensive certification results.
+Always return structured data that can be processed by the main system."""
+        )
+        self.orchestrator = orchestrator
+
+    async def run(self, enhanced_query, context=None, db=None):
+        """Execute certification workflow and return results"""
+        print(f"🔧 CertificationWorkflowAgent.run() called with query: {enhanced_query}")
+        print(f"🔧 Context: {context}")
+        print(f"🔧 DB: {db}")
         
-        super().__init__(
-            name="TriageAgent",
-            instructions=TRIAGE_AGENT_PROMPT,
-            tools=[get_recent_context],
-            handoffs=handoffs_list
-        )
+        try:
+            # If context is a string, parse it as JSON
+            if isinstance(context, str):
+                try:
+                    import json
+                    context = json.loads(context)
+                except:
+                    context = {}
+            
+            # If db is not provided, we'll need to handle this
+            if db is None:
+                print("⚠️ No database session provided, using mock context")
+                context = context or {}
+            
+            result = await self.orchestrator.handle_certification_list_workflow(enhanced_query, context, db)
+            print(f"✅ CertificationWorkflowAgent returning: {len(result) if isinstance(result, list) else 'non-list'} results")
+            return result
+        except Exception as e:
+            print(f"❌ CertificationWorkflowAgent error: {e}")
+            import traceback
+            print(f"🔍 Full traceback: {traceback.format_exc()}")
+            return f"Error in certification workflow: {str(e)}"
 
-# ListGenerationAgent: Handles list requests
-class ListGenerationAgent(Agent):
-    def __init__(self):
+class ResearchWorkflowAgent(Agent):
+    def __init__(self, orchestrator):
         super().__init__(
-            name="ListGenerationAgent",
-            instructions=LIST_GENERATION_AGENT_PROMPT,
-            tools=[get_recent_context, call_rag_api, generate_search_queries, map_queries_to_websites, perplexity_domain_search, create_parallel_queries, run_parallel_queries, synthesize_results],
+            name="Research workflow agent",
+            instructions="""You are a research workflow agent. 
+Your job is to process general research queries and return comprehensive information.
+When called, you will receive an enhanced query and should return detailed research results.
+Always return structured data that can be processed by the main system."""
         )
+        self.orchestrator = orchestrator
 
-# ResearchAgent: Handles research/information-seeking requests
-class ResearchAgent(Agent):
-    def __init__(self):
-        super().__init__(
-            name="ResearchAgent",
-            instructions=RESEARCH_AGENT_PROMPT,
-            tools=[get_recent_context, call_rag_api, generate_search_queries, map_queries_to_websites, perplexity_domain_search, create_parallel_queries, run_parallel_queries, synthesize_results],
-        )
-
-# DirectResponseAgent: Handles simple questions
-class DirectResponseAgent(Agent):
-    def __init__(self):
-        super().__init__(
-            name="DirectResponseAgent",
-            instructions=DIRECT_RESPONSE_AGENT_PROMPT,
-            tools=[get_recent_context, synthesize_results],
-        ) 
+    async def run(self, enhanced_query, context=None, db=None):
+        """Execute research workflow and return results"""
+        print(f"🔧 ResearchWorkflowAgent.run() called with query: {enhanced_query}")
+        print(f"🔧 Context: {context}")
+        print(f"🔧 DB: {db}")
+        
+        try:
+            # If context is a string, parse it as JSON
+            if isinstance(context, str):
+                try:
+                    import json
+                    context = json.loads(context)
+                except:
+                    context = {}
+            
+            # If db is not provided, we'll need to handle this
+            if db is None:
+                print("⚠️ No database session provided, using mock context")
+                context = context or {}
+            
+            result = await self.orchestrator.handle_general_research_workflow(enhanced_query, context, db)
+            print(f"✅ ResearchWorkflowAgent returning: {len(result) if isinstance(result, list) else 'non-list'} results")
+            return result
+        except Exception as e:
+            print(f"❌ ResearchWorkflowAgent error: {e}")
+            import traceback
+            print(f"🔍 Full traceback: {traceback.format_exc()}")
+            return f"Error in research workflow: {str(e)}" 

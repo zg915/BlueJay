@@ -1,4 +1,4 @@
-fastapi
+fastapi>=0.110.0
 uvicorn
 sqlalchemy[asyncio]
 asyncpg
@@ -9,5 +9,7 @@ python-dotenv
 pytest
 httpx
 loguru
+anyio>=4.5.0
+starlette>=0.37.0
 openai-agents
 aiohttp
