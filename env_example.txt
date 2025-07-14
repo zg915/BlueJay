@@ -1,0 +1,18 @@
+# Database Configuration
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=tic_research
+DB_USER=postgres
+DB_PASSWORD=your_password_here
+
+# OpenAI Configuration
+OPENAI_API_KEY=your_openai_api_key_here
+
+# Optional: Database URL (alternative to individual variables)
+# DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/tic_research
+
+# Optional: SSL Mode (if required)
+# DB_SSL_MODE=require
+
+# Optional: Logging
+LOG_LEVEL=INFO
