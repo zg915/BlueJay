@@ -1,21 +1,16 @@
+# NOTE: All @function_tool and agent-callable functions have been moved to tools/core.py.
+# This file now contains only internal helpers and non-tool functions.
+
 import os
 import requests
 import asyncio
 import aiohttp
-from agents import function_tool
 from src.memory.memory_service import get_recent_context as memory_get_recent_context, store_context as memory_store_context
 from src.database.services import add_chat_message, create_research_request
 from openai import OpenAI
 import json
 import re
 from typing import List, Dict, Any, Optional
-# Tool-exposed (agent-callable) functions: NO db argument
-@function_tool
-def get_recent_context(session_id: str):
-    """
-    Tool stub for agent use. Does not fetch from DB directly.
-    """
-    return {}
 
 async def _call_rag_api_impl(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
     """
@@ -80,14 +75,7 @@ async def _call_rag_api_impl(text: str, dataset_id: str = None, limit: int = 250
         print(f"❌ RAG API exception: {e}")
         return []
 
-@function_tool
-def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
-    """
-    Calls the external RAG API to retrieve relevant context for a given text.
-    """
-    return _call_rag_api_impl(text, dataset_id, limit, similarity, search_mode, using_re_rank)
-
-def _generate_search_queries_impl(enhanced_query: str, num_queries: int = 4):
+def generate_search_queries(enhanced_query: str, num_queries: int = 4):
     """
     Internal implementation of search query generation using LLM.
     Returns a list of 1-2 focused search queries using the Ori prompt.
@@ -189,15 +177,6 @@ Research Question: {enhanced_query}"""
             "original_query": enhanced_query
         }
 
-@function_tool
-def generate_search_queries(enhanced_query: str, num_queries: int = 4):
-    """
-    Generate multiple search queries from an enhanced query using LLM.
-    Returns a list of 1-2 focused search queries using the Ori prompt.
-    """
-    return _generate_search_queries_impl(enhanced_query, num_queries)
-
-@function_tool
 def map_queries_to_websites(queries: list[str], domain_metadata: str):
     """
     Map generated queries to relevant websites from domain metadata.
@@ -320,7 +299,6 @@ async def _perplexity_domain_search_impl(query: str, domains: list = None):
         print(f"❌ Perplexity API exception: {e}")
         return {}
 
-@function_tool
 def perplexity_domain_search(query: str, domains: list = None):
     """
     Perform web search using Perplexity API with domain-specific search.
@@ -328,14 +306,12 @@ def perplexity_domain_search(query: str, domains: list = None):
     """
     return _perplexity_domain_search_impl(query, domains)
 
-@function_tool
 def create_parallel_queries(queries: list[str]):
     """
     Create a list of parallel queries to execute.
     """
     return queries
 
-@function_tool
 async def run_parallel_queries(query_funcs: list[str]):
     """
     Run multiple query functions in parallel.
@@ -343,7 +319,6 @@ async def run_parallel_queries(query_funcs: list[str]):
     results = await asyncio.gather(*[func() for func in query_funcs])
     return results
 
-@function_tool
 def synthesize_results(results: list[str]):
     """
     Synthesize multiple results into a single coherent response.

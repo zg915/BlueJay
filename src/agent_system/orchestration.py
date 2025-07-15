@@ -6,14 +6,19 @@ import json
 import time
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agent_system.agents import CertificationWorkflowAgent, ResearchWorkflowAgent
+from agents import Agent, handoff
+from .agents import CertificationWorkflowAgent, ResearchWorkflowAgent
 from src.config.prompts import TRIAGE_AGENT_PROMPT
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
-from src.agent_system.tools import (
+from src.agent_system.internal import (
     store_message_db, store_final_response_db, store_research_request_db,
-    get_recent_context_db, store_context_db
+    get_recent_context_db, store_context_db,
+    generate_search_queries, map_queries_to_websites
 )
-from agents import Agent, handoff, Runner
+from src.agent_system.tools import (
+    generate_search_queries, map_queries_to_websites, perplexity_domain_search, synthesize_results
+)
+from agents import Runner
 import asyncio
 
 #TODO: move it somewhere else?
@@ -125,6 +130,10 @@ class WorkflowOrchestrator:
         def _noop(context, input):
             print("\n\n\n", context, "\n\n\n", input)
             pass
+        # Set the global orchestrator for tools to access
+        from src.agent_system.tools.core import set_global_orchestrator
+        set_global_orchestrator(self)
+        
         self.certification_agent = CertificationWorkflowAgent(self)
         self.research_agent = ResearchWorkflowAgent(self)
         self.triage_agent = Agent(
@@ -232,110 +241,7 @@ class WorkflowOrchestrator:
             raise
 
 
-    
-    async def handle_certification_list_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
-        """
-        Specialized workflow for certification list requests.
-        Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.
-        """
-        print(f"📋 Starting certification list workflow for: {enhanced_query}")
-        
-        # Step 1: Generate multiple focused queries
-        print("🧠 Step 1: Creating multiple focused queries...")
-        search_queries = await self._generate_certification_queries(enhanced_query)
-        print(f"✅ Generated {len(search_queries)} search queries")
-        
-        # Step 2: Run 3 parallel operations for each query
-        print("🔄 Step 2: Running parallel operations for each query...")
-        
-        # Create all tasks for parallel execution with timing
-        all_tasks = []
-        for i, query in enumerate(search_queries):
-            log_with_time(f"  Preparing query {i+1}/{len(search_queries)}: {query}")
-            
-            # Create 3 parallel tasks for this query with timing
-            query_tasks = [
-                timed_task(f"RAG-{i+1}", self._rag_domain_search(query)),
-                timed_task(f"WEB-{i+1}", self._general_web_search(query)),
-                timed_task(f"DB-{i+1}", self._lookup_past_certifications(query, db))
-            ]
-            all_tasks.extend(query_tasks)
-        
-        # Execute ALL tasks in parallel
-        log_with_time(f"🚀 Executing {len(all_tasks)} operations in parallel...")
-        all_results = await asyncio.gather(*all_tasks, return_exceptions=True)
-        
-        # Print timing table
-        print_timing_table(all_results)
-        
-        # Group results by query (now handling timed task results)
-        grouped_results = []
-        for i, query in enumerate(search_queries):
-            # Get results for this query (3 operations per query)
-            start_idx = i * 3
-            rag_task_result = all_results[start_idx] if not isinstance(all_results[start_idx], Exception) else {"result": [], "status": "error"}
-            general_task_result = all_results[start_idx + 1] if not isinstance(all_results[start_idx + 1], Exception) else {"result": [], "status": "error"}
-            db_task_result = all_results[start_idx + 2] if not isinstance(all_results[start_idx + 2], Exception) else {"result": [], "status": "error"}
-            
-            # Extract actual results from timed task results
-            rag_domain_results = rag_task_result.get("result", []) if isinstance(rag_task_result, dict) else []
-            general_results = general_task_result.get("result", []) if isinstance(general_task_result, dict) else []
-            db_results = db_task_result.get("result", []) if isinstance(db_task_result, dict) else []
-            
-            query_results = {
-                "query": query,
-                "rag_domain_results": rag_domain_results,
-                "general_results": general_results,
-                "db_results": db_results
-            }
-            
-            grouped_results.append(query_results)
-            print(f"  ✅ Query {i+1} completed: {len(rag_domain_results)} domain results, {len(general_results)} general results, {len(db_results)} DB results")
-            
-            # Log detailed results for each query
-            print(f"    📊 DETAILED RESULTS FOR QUERY {i+1}: '{query}'")
-            
-            # RAG Domain Results
-            print(f"      🔍 RAG Domain Results ({len(rag_domain_results)} items):")
-            for j, result in enumerate(rag_domain_results[:]):  # Show first 2 results
-                print(f"        {j+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:40]}...")
-            if len(rag_domain_results) > 2:
-                print(f"        ... and {len(rag_domain_results)} more results")
-            
-            # General Results
-            print(f"      🌐 General Results ({len(general_results)} items):")
-            for j, result in enumerate(general_results[:]):  # Show first 2 results
-                print(f"        {j+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:40]}...")
-            if len(general_results) > 2:
-                print(f"        ... and {len(general_results)} more results")
-            
-            # DB Results
-            print(f"      🗄️ DB Results ({len(db_results)} items):")
-            for j, result in enumerate(db_results[:]):  # Show first 2 results
-                print(f"        {j+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:40]}...")
-            if len(db_results) > 2:
-                print(f"        ... and {len(db_results) } more results")
-            print(f"    📊 END DETAILED RESULTS FOR QUERY {i+1}\n")
-        
-        # Combine all results from all queries
-        all_combined_results = []
-        for query_results in grouped_results:
-            # Add RAG domain results
-            if query_results['rag_domain_results']:
-                all_combined_results.extend(query_results['rag_domain_results'])
-            # Add general results
-            if query_results['general_results']:
-                all_combined_results.extend(query_results['general_results'])
-            # Add DB results
-            if query_results['db_results']:
-                all_combined_results.extend(query_results['db_results'])
-        
-        print(f"✅ Combined {len(all_combined_results)} total results from all queries and sources")
-        
-        # Return raw results for OpenAI processing
-        print("📤 Returning raw results for OpenAI deduplication and streaming...")
-        return all_combined_results
-    
+ 
     async def handle_general_research_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
         """
         General research workflow for non-certification requests.
@@ -408,28 +314,103 @@ class WorkflowOrchestrator:
         # Return raw results for OpenAI processing
         print("📤 Returning raw results for OpenAI processing...")
         return all_results
+
+    async def handle_certification_list_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
+        """
+        Specialized workflow for certification list requests.
+        Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.
+        """
+        print(f"📋 Starting certification list workflow for: {enhanced_query}")
+        
+        # Execute all three search types in parallel with timing
+        log_with_time("🚀 Starting parallel certification search operations...")
+        all_results = await asyncio.gather(
+            timed_task("RAG-Domain", self._rag_domain_search(enhanced_query)),
+            timed_task("General-Web", self._general_web_search(enhanced_query)),
+            timed_task("Internal-DB", self._lookup_past_certifications(enhanced_query, db)),
+            return_exceptions=True
+        )
+        
+        # Print timing table
+        print_timing_table(all_results)
+        
+        # Extract results from timed task results
+        rag_task_result = all_results[0] if not isinstance(all_results[0], Exception) else {"result": [], "status": "error"}
+        general_task_result = all_results[1] if not isinstance(all_results[1], Exception) else {"result": [], "status": "error"}
+        db_task_result = all_results[2] if not isinstance(all_results[2], Exception) else {"result": [], "status": "error"}
+        
+        rag_domain_results = rag_task_result.get("result", []) if isinstance(rag_task_result, dict) else []
+        general_results = general_task_result.get("result", []) if isinstance(general_task_result, dict) else []
+        db_results = db_task_result.get("result", []) if isinstance(db_task_result, dict) else []
+        
+        # Log results from each parallel task
+        print(f"\n📊 PARALLEL CERTIFICATION TASK RESULTS:")
+        print(f"    🔍 RAG Domain Search Results: {len(rag_domain_results) if not isinstance(rag_domain_results, Exception) else 'ERROR'} items")
+        if not isinstance(rag_domain_results, Exception):
+            for i, result in enumerate(rag_domain_results[:3]):  # Show first 3 results
+                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
+            if len(rag_domain_results) > 3:
+                print(f"      ... and {len(rag_domain_results) - 3} more results")
+        else:
+            print(f"      ❌ RAG Domain Search Error: {rag_domain_results}")
+        
+        print(f"    🌐 General Web Search Results: {len(general_results) if not isinstance(general_results, Exception) else 'ERROR'} items")
+        if not isinstance(general_results, Exception):
+            for i, result in enumerate(general_results[:3]):  # Show first 3 results
+                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
+            if len(general_results) > 3:
+                print(f"      ... and {len(general_results) - 3} more results")
+        else:
+            print(f"      ❌ General Web Search Error: {general_results}")
+        
+        print(f"    🗄️ Internal DB Lookup Results: {len(db_results) if not isinstance(db_results, Exception) else 'ERROR'} items")
+        if not isinstance(db_results, Exception):
+            for i, result in enumerate(db_results[:3]):  # Show first 3 results
+                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
+            if len(db_results) > 3:
+                print(f"      ... and {len(db_results) - 3} more results")
+        else:
+            print(f"      ❌ Internal DB Lookup Error: {db_results}")
+        
+        print(f"📊 END PARALLEL CERTIFICATION TASK RESULTS\n")
+        
+        # Combine all results
+        all_results = []
+        if not isinstance(rag_domain_results, Exception):
+            all_results.extend(rag_domain_results)
+        if not isinstance(general_results, Exception):
+            all_results.extend(general_results)
+        if not isinstance(db_results, Exception):
+            all_results.extend(db_results)
+        
+        print(f"✅ Combined {len(all_results)} total certification results from all sources")
+        
+        # Store the certification result
+        if all_results:
+            await self._store_certification_result(str(all_results), enhanced_query, db)
+        
+        # Return raw results for OpenAI processing
+        print("📤 Returning raw certification results for OpenAI processing...")
+        return all_results
     
     async def _call_rag_api(self, query: str):
         """Call RAG API to get domain metadata"""
-        from src.agent_system.tools import _call_rag_api_impl
+        from src.agent_system.internal import _call_rag_api_impl
         return await _call_rag_api_impl(query)
     
     async def _generate_search_queries(self, enhanced_query: str):
         """Generate multiple search queries from enhanced query"""
-        from src.agent_system.tools import generate_search_queries
         result = generate_search_queries(enhanced_query)
         return result.get("queries", [])
     
     async def _map_queries_to_websites(self, queries: list[str], domain_metadata: dict):
         """Map queries to relevant websites"""
-        from src.agent_system.tools import map_queries_to_websites
         import json
         metadata_str = json.dumps(domain_metadata)
         return map_queries_to_websites(queries, metadata_str)
     
     async def _parallel_web_search(self, query_website_mapping: dict):
         """Perform parallel web searches for each query-website pair"""
-        from src.agent_system.tools import perplexity_domain_search
         import asyncio
         
         search_tasks = []
@@ -443,7 +424,6 @@ class WorkflowOrchestrator:
     
     async def _search_single_website(self, query: str, website: str):
         """Search a single website for a query"""
-        from src.agent_system.tools import perplexity_domain_search
         try:
             result = perplexity_domain_search(query, website)
             return {
@@ -457,34 +437,11 @@ class WorkflowOrchestrator:
     
     async def _synthesize_results(self, search_results: list, original_query: str):
         """Synthesize all search results into final response"""
-        from src.agent_system.tools import synthesize_results
-        
-        # Convert search results to strings for synthesis
-        result_strings = []
-        for result in search_results:
-            if result:
-                result_strings.append(f"Query: {result['query']}\nWebsite: {result['website']}\nResult: {result['result']}")
-        
-        return synthesize_results(result_strings)
+        return synthesize_results(search_results)
     
     async def _synthesize_certification_results(self, certification_results: list, original_query: str):
         """Synthesize certification results into a structured final response"""
-        from src.agent_system.tools import synthesize_results
-        
-        # Convert certification results to strings for synthesis
-        result_strings = []
-        for result in certification_results:
-            if result and isinstance(result, dict):
-                # Format certification results
-                cert_name = result.get('certificate_name', 'Unknown Certificate')
-                cert_desc = result.get('certificate_description', 'No description available')
-                is_required = result.get('is_required', False)
-                requirement_text = "REQUIRED" if is_required else "OPTIONAL"
-                
-                result_strings.append(f"Certificate: {cert_name}\nDescription: {cert_desc}\nStatus: {requirement_text}")
-        
-        # Use the existing synthesis function
-        return synthesize_results(result_strings)
+        return synthesize_results(certification_results)
     
     async def _stream_openai_response(self, raw_results: list, original_query: str, session_id: str, db: AsyncSession, message_id: str):
         """
@@ -687,23 +644,15 @@ Raw Results ({len(raw_results)} items):
     
     async def _generate_certification_queries(self, enhanced_query: str):
         """Generate multiple focused queries for certification search"""
-        from src.agent_system.tools import _generate_search_queries_impl
-        
-        # Call the implementation function directly
-        result = _generate_search_queries_impl(enhanced_query)
-        
-        # Log the reasoning for debugging
+        result = generate_search_queries(enhanced_query)
         if result.get("reasoning"):
             print(f"🧠 Query generation reasoning: {result['reasoning']}")
-        
         queries = result.get("queries", [])
         print(f"✅ Generated {len(queries)} queries: {queries}")
-        
         return queries
     
     async def _parallel_certification_search(self, search_queries: list[str]):
         """Perform parallel web search for certification queries"""
-        from src.agent_system.tools import perplexity_domain_search
         import asyncio
         
         search_tasks = []
@@ -719,7 +668,6 @@ Raw Results ({len(raw_results)} items):
     
     async def _search_single_domain(self, query: str, domain: str):
         """Search a single domain for a query"""
-        from src.agent_system.tools import perplexity_domain_search
         try:
             result = perplexity_domain_search(query, domain)
             return {
@@ -815,7 +763,7 @@ Raw Results ({len(raw_results)} items):
     
     async def _search_single_domain_with_prompt(self, query: str, domains: list, search_type: str):
         """Search with specific prompt based on search type"""
-        from src.agent_system.tools import _perplexity_domain_search_impl
+        from src.agent_system.internal import _perplexity_domain_search_impl
         from src.config.prompts import PERPLEXITY_LIST_GENERAL_PROMPT, PERPLEXITY_LIST_DOMAIN_PROMPT
         
         # Choose prompt based on search type
@@ -828,12 +776,13 @@ Raw Results ({len(raw_results)} items):
             # Call Perplexity with domain list
             result = await _perplexity_domain_search_impl(query, domains)
             
-            # Parse the JSON result
+            # Parse the JSON result with robust error handling
             import json
+            import re
             if isinstance(result, dict) and "choices" in result:
                 content = result["choices"][0]["message"]["content"]
                 try:
-                    # Parse the structured JSON response
+                    # First try: direct JSON parsing
                     parsed_result = json.loads(content)
                     if isinstance(parsed_result, list):
                         return parsed_result
@@ -845,7 +794,145 @@ Raw Results ({len(raw_results)} items):
                 except json.JSONDecodeError as e:
                     print(f"    ❌ JSON parsing failed for {search_type} search: {e}")
                     print(f"    🔍 Raw content: {content[:200]}...")
-                    return []
+                    
+                    # Second try: Clean up common JSON issues
+                    try:
+                        # Fix common JSON issues
+                        cleaned_content = content
+                        
+                        # Fix unquoted property names
+                        cleaned_content = re.sub(r'(\w+):', r'"\1":', cleaned_content)
+                        
+                        # Handle unterminated strings by truncating at the error point
+                        # Find where the JSON breaks and extract complete objects
+                        json_objects = []
+                        
+                        # Try to find complete JSON objects by looking for balanced braces
+                        brace_count = 0
+                        start_pos = -1
+                        in_string = False
+                        escape_next = False
+                        
+                        for i, char in enumerate(cleaned_content):
+                            if escape_next:
+                                escape_next = False
+                                continue
+                            
+                            if char == '\\':
+                                escape_next = True
+                                continue
+                            
+                            if char == '"' and not escape_next:
+                                in_string = not in_string
+                                continue
+                            
+                            if not in_string:
+                                if char == '{':
+                                    if brace_count == 0:
+                                        start_pos = i
+                                    brace_count += 1
+                                elif char == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0 and start_pos != -1:
+                                        # Try to parse this complete object
+                                        try:
+                                            obj_str = cleaned_content[start_pos:i+1]
+                                            obj = json.loads(obj_str)
+                                            json_objects.append(obj)
+                                        except json.JSONDecodeError:
+                                            continue
+                                        start_pos = -1
+                        
+                        if json_objects:
+                            print(f"    ✅ Recovered {len(json_objects)} valid JSON objects from malformed response")
+                            return json_objects
+                        
+                        # Third try: String truncation and repair
+                        print(f"    🔍 Attempting string truncation and repair...")
+                        try:
+                            # Find the error position and truncate
+                            error_pos = content.find('Unterminated string')
+                            if error_pos == -1:
+                                # Try to find where strings are likely to be unterminated
+                                lines = content.split('\n')
+                                repaired_lines = []
+                                
+                                for line in lines:
+                                    # Check for unterminated strings in this line
+                                    quote_count = line.count('"')
+                                    if quote_count % 2 == 1:  # Odd number of quotes
+                                        # Try to fix by adding a closing quote
+                                        if line.strip().endswith(','):
+                                            line = line.rstrip(',') + '",'
+                                        elif line.strip().endswith('}'):
+                                            line = line.rstrip('}') + '"}'
+                                        else:
+                                            line = line + '"'
+                                    repaired_lines.append(line)
+                                
+                                repaired_content = '\n'.join(repaired_lines)
+                                
+                                # Try to parse the repaired content
+                                try:
+                                    parsed_result = json.loads(repaired_content)
+                                    if isinstance(parsed_result, list):
+                                        print(f"    ✅ Repaired JSON and parsed {len(parsed_result)} objects")
+                                        return parsed_result
+                                    elif isinstance(parsed_result, dict):
+                                        print(f"    ✅ Repaired JSON and parsed 1 object")
+                                        return [parsed_result]
+                                except json.JSONDecodeError:
+                                    print(f"    ❌ JSON repair failed")
+                            else:
+                                print(f"    ❌ Could not determine error position")
+                        except Exception as repair_error:
+                            print(f"    ❌ String repair failed: {repair_error}")
+                        
+                        # Fourth try: Manual extraction of certification objects
+                        print(f"    🔍 Attempting manual extraction of certification data...")
+                        manual_objects = []
+                        
+                        # Look for certificate patterns in the raw content
+                        cert_patterns = [
+                            r'"certificate_name":\s*"([^"]+)"',
+                            r'"certificate_description":\s*"([^"]*)"',
+                            r'"is_required":\s*(true|false)'
+                        ]
+                        
+                        # Extract what we can from the malformed JSON
+                        lines = content.split('\n')
+                        current_obj = {}
+                        
+                        for line in lines:
+                            line = line.strip()
+                            if line.startswith('{'):
+                                current_obj = {}
+                            elif line.startswith('"certificate_name"'):
+                                match = re.search(r'"certificate_name":\s*"([^"]+)"', line)
+                                if match:
+                                    current_obj['certificate_name'] = match.group(1)
+                            elif line.startswith('"certificate_description"'):
+                                match = re.search(r'"certificate_description":\s*"([^"]*)"', line)
+                                if match:
+                                    current_obj['certificate_description'] = match.group(1)
+                            elif line.startswith('"is_required"'):
+                                match = re.search(r'"is_required":\s*(true|false)', line)
+                                if match:
+                                    current_obj['is_required'] = match.group(1) == 'true'
+                            elif line.startswith('}'):
+                                if 'certificate_name' in current_obj:
+                                    manual_objects.append(current_obj.copy())
+                        
+                        if manual_objects:
+                            print(f"    ✅ Manually extracted {len(manual_objects)} certification objects")
+                            return manual_objects
+                        else:
+                            print(f"    ❌ Could not recover any valid JSON objects")
+                            return []
+                            
+                    except Exception as cleanup_error:
+                        print(f"    ❌ JSON cleanup also failed: {cleanup_error}")
+                        return []
             else:
                 print(f"    ⚠️ Unexpected Perplexity response format for {search_type} search")
                 return []
