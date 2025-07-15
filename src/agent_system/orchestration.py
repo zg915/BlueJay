@@ -121,6 +121,10 @@ def print_timing_table(task_results):
 class WorkflowOrchestrator:
     def __init__(self):
         print("🔧 Initializing WorkflowOrchestrator...")
+        #TODO: move it somewhere else?
+        def _noop(context, input):
+            print("\n\n\n", context, "\n\n\n", input)
+            pass
         self.certification_agent = CertificationWorkflowAgent(self)
         self.research_agent = ResearchWorkflowAgent(self)
         self.triage_agent = Agent(
@@ -131,7 +135,8 @@ class WorkflowOrchestrator:
                 handoff(self.certification_agent,
                         tool_name_override="transfer_to_certification_workflow",
                         tool_description_override="TODO",
-                        input_type=CertificationAgentArgs),
+                        input_type=CertificationAgentArgs,
+                        on_handoff=_noop),
                 handoff(self.research_agent, tool_name_override="transfer_to_research_workflow")
             ]
         )
@@ -158,7 +163,7 @@ class WorkflowOrchestrator:
             input_moderation(message)
             print("✅ Input moderation passed")
             # Load last 5 messages for context
-            context = await get_recent_context_db(db, session_id)
+            context = await get_recent_context_db(db, session_id, 7)
             print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
             # Run triage agent (which will handoff automatically)
             print("\n🎯 Running triage agent with handoffs...")
