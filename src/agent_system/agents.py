@@ -1,4 +1,5 @@
 from agents import Agent, handoff, function_tool
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.agent_system.tools import get_recent_context
 from src.config.prompts import (
     TRIAGE_AGENT_PROMPT,
@@ -15,7 +16,7 @@ class CertificationWorkflowAgent(Agent):
         )
         self.orchestrator = orchestrator
     #TODO: print and check if the enhanced_query, context are correct
-    async def run(self, enhanced_query, context=None, db=None):
+    async def run(self, enhanced_query: str, context: dict = None, db: AsyncSession = None):
         """Execute certification workflow and return results"""
         print(f"🔧 CertificationWorkflowAgent.run() called with query: {enhanced_query}")
         print(f"🔧 Context: {context}")
