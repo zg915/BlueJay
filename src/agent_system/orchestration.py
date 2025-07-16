@@ -154,7 +154,7 @@ class WorkflowOrchestrator:
         """
         print(f"\n🚀 Starting workflow for session: {session_id}")
         print(f"📝 User message: {message}")
-        # Pre-hooks: mandatory steps
+            # Pre-hooks: mandatory steps
         try:
             print("🔍 Running pre-hooks...")
             #TODO: this should never be triggered, if ever triggered, just pop 500 internal error
@@ -195,17 +195,28 @@ class WorkflowOrchestrator:
             print(f"📊 Workflow output type: {type(workflow_output)}")
             print(f"📊 Workflow output length: {len(workflow_output) if isinstance(workflow_output, list) else 'N/A'}")
             # Handle different types of workflow output
-            if isinstance(workflow_output, str):
+            # Check if the agent returned structured, deduplicated results
+            if isinstance(workflow_output, list) and all(isinstance(item, dict) for item in workflow_output):
+                # Agent already returned structured, deduplicated results
+                print("✅ Agent returned structured results, streaming directly...")
+                print(f"📊 Streaming {len(workflow_output)} deduplicated results directly")
+                return workflow_output
+            elif isinstance(workflow_output, str):
                 # If it's a string, it might be a JSON response or direct text
                 try:
                     parsed = json.loads(workflow_output)
-                    if isinstance(parsed, dict) and 'content' in parsed:
+                    if isinstance(parsed, list) and all(isinstance(item, dict) for item in parsed):
+                        # Agent returned JSON string of structured results
+                        print("✅ Agent returned JSON structured results, streaming directly...")
+                        print(f"📊 Streaming {len(parsed)} deduplicated results directly")
+                        return parsed
+                    elif isinstance(parsed, dict) and 'content' in parsed:
                         # This is a direct response from the workflow agent
                         print(f"📝 Direct response from workflow agent: {parsed['content']}")
                         return parsed['content']
                     else:
-                        # This is structured data that needs processing
-                        print(f"📝 Structured data from workflow agent: {parsed}")
+                        # Fall back to OpenAI processing for non-structured data
+                        print(f"📝 Non-structured data from workflow agent, using OpenAI processing")
                         final_result = await self._stream_openai_response(
                             parsed if isinstance(parsed, list) else [parsed], 
                             message, session_id, db, message_id
@@ -215,22 +226,19 @@ class WorkflowOrchestrator:
                     # Not JSON, treat as direct text response
                     print(f"📝 Direct text response from workflow agent: {workflow_output}")
                     return workflow_output
-            elif isinstance(workflow_output, list):
-                # Structured data that needs processing
-                print(f"📝 List of results from workflow agent: {len(workflow_output)} items")
+            else:
+                # Fall back to OpenAI processing for unknown types
+                print(f"📝 Unknown workflow output type: {type(workflow_output)}, using OpenAI processing")
                 final_result = await self._stream_openai_response(
-                    workflow_output, message, session_id, db, message_id
+                    workflow_output if isinstance(workflow_output, list) else [workflow_output], 
+                    message, session_id, db, message_id
                 )
                 return final_result
-            else:
-                # Unknown type, return as is
-                print(f"📝 Unknown workflow output type: {type(workflow_output)}")
-                return str(workflow_output)
         except Exception as e:
             print(f"❌ Error in handle_user_question: {e}")
             import traceback
             print(f"🔍 Full traceback: {traceback.format_exc()}")
-            raise
+            raise 
 
 
  

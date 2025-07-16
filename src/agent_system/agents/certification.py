@@ -15,7 +15,7 @@ class CertificationWorkflowAgent(Agent):
                 "You MUST always use the tool: handle_certification_list_workflow.\n"
                 "After receiving the list of certifications, deduplicate them using your own reasoning—do not call any deduplication tool.\n"
                 "Only return unique certifications, grouped by their official name.\n"
-                "Return a JSON array of certification objects with these fields: certificate_name, certificate_description, legal_regulation, legal_text_excerpt, legal_text_meaning, registration_fee, is_required.\n"
+                "Stream each unique certification as a separate response.\n"
                 "NEVER respond directly to the user. If you cannot use the tool, return an error.\n"
                 "Always return structured data that can be processed by the main system."
             ),
