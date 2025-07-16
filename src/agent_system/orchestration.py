@@ -314,19 +314,19 @@ class WorkflowOrchestrator:
         print("📤 Returning raw results for OpenAI processing...")
         return all_results
     
-    async def search_relevant_certification(self, enhanced_query: str, context: dict, db: AsyncSession):
+    async def search_relevant_certification(self, search_queries: list[str], db: AsyncSession):
         """
         Specialized workflow for certification list requests.
-        Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.
         """
-        print(f"📋 Starting certification list workflow for: {enhanced_query}")
+        print(f"📋 Starting certification list workflow for: {search_queries}")
         
         # Execute all three search types in parallel with timing
         log_with_time("🚀 Starting parallel certification search operations...")
         all_results = await asyncio.gather(
-            timed_task("RAG-Domain", self._rag_domain_search(enhanced_query)),
-            timed_task("General-Web", self._general_web_search(enhanced_query)),
-            timed_task("Internal-DB", self._lookup_past_certifications(enhanced_query, db)),
+            #TODO: enable all three with multiple queries (parallel)
+            timed_task("RAG-Domain", self._rag_domain_search(search_queries)),
+            timed_task("General-Web", self._general_web_search(search_queries)),
+            timed_task("Internal-DB", self._lookup_past_certifications(search_queries, db)),
             return_exceptions=True
         )
         
