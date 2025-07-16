@@ -13,12 +13,14 @@ class ResearchWorkflowAgent(Agent):
             instructions=(
                 "You are a research workflow agent.\n"
                 "You MUST always use the tool: handle_general_research_workflow.\n"
+                "After receiving the list of research results, deduplicate them using your own reasoning—do not call any deduplication tool.\n"
+                "Only return unique results, grouped by their official name or title.\n"
+                "Return a JSON array of research objects with appropriate fields for the research type.\n"
                 "NEVER respond directly to the user. If you cannot use the tool, return an error.\n"
                 "Always return structured data that can be processed by the main system."
             ),
             tools=[handle_general_research_workflow],
-            model_settings=ModelSettings(tool_choice="handle_general_research_workflow"),
-            tool_use_behavior="stop_on_first_tool"
+            model_settings=ModelSettings(tool_choice="handle_general_research_workflow")
         )
         self.orchestrator = orchestrator
 
