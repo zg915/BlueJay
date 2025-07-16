@@ -43,7 +43,7 @@ def safe_parse_context(context_json):
                 raise ValueError("Context is not valid JSON or Python dict string")
 
 @function_tool
-async def handle_certification_list_workflow(enhanced_query: str, context_json: Optional[str] = None):
+async def search_relevant_certification(enhanced_query: str, context_json: Optional[str] = None):
     #TODO: alt2er the tool description
     """
     Specialized workflow for certification list requests.
@@ -54,7 +54,7 @@ async def handle_certification_list_workflow(enhanced_query: str, context_json: 
     if global_orchestrator is None:
         raise RuntimeError("Orchestrator not set. Call set_certification_workflow_orchestrator first.")
     db = getattr(global_orchestrator, 'db', None)
-    return await global_orchestrator.handle_certification_list_workflow(enhanced_query, context, db)
+    return await global_orchestrator.search_relevant_certification(enhanced_query, context, db)
 
 @function_tool
 async def handle_general_research_workflow(enhanced_query: str, context_json: Optional[str] = None):
