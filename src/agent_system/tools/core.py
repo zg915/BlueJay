@@ -19,15 +19,28 @@ def set_certification_workflow_orchestrator(orchestrator):
     return True
 
 def safe_parse_context(context_json):
+    print(f"[DEBUG] Raw context_json: {context_json!r}")
     if not context_json:
         return None
     try:
         return json.loads(context_json)
-    except json.JSONDecodeError:
+    except Exception:
         try:
+            import ast
             return ast.literal_eval(context_json)
         except Exception:
-            raise ValueError("Context is not valid JSON or Python dict string")
+            # Try string replacement as last resort
+            fixed = (
+                context_json
+                .replace('None', 'null')
+                .replace('True', 'true')
+                .replace('False', 'false')
+                .replace("'", '"')
+            )
+            try:
+                return json.loads(fixed)
+            except Exception:
+                raise ValueError("Context is not valid JSON or Python dict string")
 
 @function_tool
 async def handle_certification_list_workflow(enhanced_query: str, context_json: Optional[str] = None):
@@ -41,6 +54,18 @@ async def handle_certification_list_workflow(enhanced_query: str, context_json: 
         raise RuntimeError("Orchestrator not set. Call set_certification_workflow_orchestrator first.")
     db = getattr(global_orchestrator, 'db', None)
     return await global_orchestrator.handle_certification_list_workflow(enhanced_query, context, db)
+
+@function_tool
+async def handle_general_research_workflow(enhanced_query: str, context_json: Optional[str] = None):
+    """
+    Specialized workflow for general research requests.
+    """
+    print(f"🔬 Starting general research workflow for: {enhanced_query}")
+    context = safe_parse_context(context_json)
+    if global_orchestrator is None:
+        raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
+    db = getattr(global_orchestrator, 'db', None)
+    return await global_orchestrator.handle_general_research_workflow(enhanced_query, context, db)
 
 @function_tool
 def get_recent_context(session_id: str):

@@ -157,13 +157,12 @@ class WorkflowOrchestrator:
         """
         print(f"\n🚀 Starting workflow for session: {session_id}")
         print(f"📝 User message: {message}")
+        # Pre-hooks: mandatory steps
         try:
-            # Pre-hooks: mandatory steps
             print("🔍 Running pre-hooks...")
             #TODO: this should never be triggered, if ever triggered, just pop 500 internal error
             validate_input(message)
             print("✅ Input validation passed")
-
             # Store the user message and get the message object
             user_message_obj = await store_message_db(session_id,message, db, "user")
             print("✅ Message stored in database")
@@ -179,7 +178,6 @@ class WorkflowOrchestrator:
             #TODO: change the input to formal structure
             triage_input = f"Message: {message}\nContext: {context}"
             print(f"📤 Triage input: {triage_input[:200]}...")
-            
             triage_result = await Runner.run(
                 starting_agent=self.triage_agent,
                 input=triage_input
@@ -187,7 +185,6 @@ class WorkflowOrchestrator:
             print("✅ Triage agent (with handoff) completed")
             print(f"📥 Triage result type: {type(triage_result)}")
             print(f"📥 Triage result: {triage_result}")
-            
             # Debug: Check if the triage agent actually called a workflow agent
             if hasattr(triage_result, 'last_agent'):
                 print(f"🔍 Last agent in chain: {triage_result.last_agent.name if triage_result.last_agent else 'None'}")
@@ -195,17 +192,14 @@ class WorkflowOrchestrator:
                 print(f"🔍 Number of raw responses: {len(triage_result.raw_responses) if triage_result.raw_responses else 0}")
                 for i, response in enumerate(triage_result.raw_responses or []):
                     print(f"🔍 Raw response {i+1}: {response}")
-            
             # The result is the output of the correct workflow agent
             workflow_output = triage_result.final_output if hasattr(triage_result, 'final_output') else triage_result
             print(f"📊 Workflow output type: {type(workflow_output)}")
             print(f"📊 Workflow output length: {len(workflow_output) if isinstance(workflow_output, list) else 'N/A'}")
-            
             # Handle different types of workflow output
             if isinstance(workflow_output, str):
                 # If it's a string, it might be a JSON response or direct text
                 try:
-                    import json
                     parsed = json.loads(workflow_output)
                     if isinstance(parsed, dict) and 'content' in parsed:
                         # This is a direct response from the workflow agent
@@ -264,11 +258,10 @@ class WorkflowOrchestrator:
         rag_task_result = all_results[0] if not isinstance(all_results[0], Exception) else {"result": [], "status": "error"}
         general_task_result = all_results[1] if not isinstance(all_results[1], Exception) else {"result": [], "status": "error"}
         db_task_result = all_results[2] if not isinstance(all_results[2], Exception) else {"result": [], "status": "error"}
-        
         rag_domain_results = rag_task_result.get("result", []) if isinstance(rag_task_result, dict) else []
         general_results = general_task_result.get("result", []) if isinstance(general_task_result, dict) else []
         db_results = db_task_result.get("result", []) if isinstance(db_task_result, dict) else []
-        
+            
         # Log results from each parallel task
         print(f"\n📊 PARALLEL TASK RESULTS:")
         print(f"    🔍 RAG Domain Search Results: {len(rag_domain_results) if not isinstance(rag_domain_results, Exception) else 'ERROR'} items")
@@ -314,7 +307,7 @@ class WorkflowOrchestrator:
         # Return raw results for OpenAI processing
         print("📤 Returning raw results for OpenAI processing...")
         return all_results
-
+    
     async def handle_certification_list_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
         """
         Specialized workflow for certification list requests.
@@ -338,7 +331,6 @@ class WorkflowOrchestrator:
         rag_task_result = all_results[0] if not isinstance(all_results[0], Exception) else {"result": [], "status": "error"}
         general_task_result = all_results[1] if not isinstance(all_results[1], Exception) else {"result": [], "status": "error"}
         db_task_result = all_results[2] if not isinstance(all_results[2], Exception) else {"result": [], "status": "error"}
-        
         rag_domain_results = rag_task_result.get("result", []) if isinstance(rag_task_result, dict) else []
         general_results = general_task_result.get("result", []) if isinstance(general_task_result, dict) else []
         db_results = db_task_result.get("result", []) if isinstance(db_task_result, dict) else []
@@ -561,7 +553,6 @@ Raw Results ({len(raw_results)} items):
         formatted_results = []
         for i, result in enumerate(raw_results):
             print(f"📝 Processing result {i+1}/{len(raw_results)}: {type(result)}")
-            
             if isinstance(result, dict):
                 # Handle certification results
                 if 'certificate_name' in result:
@@ -932,7 +923,7 @@ Raw Results ({len(raw_results)} items):
                             
                     except Exception as cleanup_error:
                         print(f"    ❌ JSON cleanup also failed: {cleanup_error}")
-                        return []
+                    return []
             else:
                 print(f"    ⚠️ Unexpected Perplexity response format for {search_type} search")
                 return []
