@@ -44,6 +44,7 @@ def safe_parse_context(context_json):
 
 @function_tool
 async def handle_certification_list_workflow(enhanced_query: str, context_json: Optional[str] = None):
+    #TODO: alt2er the tool description
     """
     Specialized workflow for certification list requests.
     Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.

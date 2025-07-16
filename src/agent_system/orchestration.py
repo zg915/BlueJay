@@ -23,15 +23,14 @@ import asyncio
 
 #TODO: move it somewhere else?
 from pydantic import BaseModel, Field
-class CertificationAgentArgs(BaseModel):
+class ReasonArgs(BaseModel):
     """
     Arguments required by the CertificationWorkflowAgent.
     """
-    enhanced_query: str = Field(
+    reason: str = Field(
         ...,
         description=(
-            "A clarified, context-rich version of the user’s original question. "
-            "Should normalize terminology, add jurisdiction/product context, etc."
+            "A concise and clear one sentence reason of why choosing this handoff"
         )
     )
 
@@ -127,8 +126,8 @@ class WorkflowOrchestrator:
     def __init__(self):
         print("🔧 Initializing WorkflowOrchestrator...")
         #TODO: move it somewhere else?
-        def _noop(context, input):
-            print("\n\n\n", context, "\n\n\n", input)
+        def _print_reason(context, input):
+            print("\n\n\n", input, "\n\n\n")
             pass
         # Set the global orchestrator for tools to access
         from src.agent_system.tools.core import set_global_orchestrator
@@ -139,14 +138,12 @@ class WorkflowOrchestrator:
         self.triage_agent = Agent(
             name="Triage agent",
             instructions=TRIAGE_AGENT_PROMPT,
-            #TODO: handle the filter input, tool description override
+            #TODO: handle the filter input
             handoffs=[
                 handoff(self.certification_agent,
-                        tool_name_override="transfer_to_certification_workflow",
-                        tool_description_override="TODO",
-                        input_type=CertificationAgentArgs,
-                        on_handoff=_noop),
-                handoff(self.research_agent, tool_name_override="transfer_to_research_workflow")
+                        input_type=ReasonArgs,
+                        on_handoff=_print_reason),
+                handoff(self.research_agent)
             ]
         )
         print("✅ WorkflowOrchestrator initialized successfully")
@@ -175,13 +172,14 @@ class WorkflowOrchestrator:
             print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
             # Run triage agent (which will handoff automatically)
             print("\n🎯 Running triage agent with handoffs...")
-            #TODO: change the input to formal structure
-            triage_input = f"Message: {message}\nContext: {context}"
-            print(f"📤 Triage input: {triage_input[:200]}...")
+            #TODO: think about how to use the summary memory and feed to triage
+            summary_memory = context["summary"]
+
             triage_result = await Runner.run(
                 starting_agent=self.triage_agent,
-                input=triage_input
+                input=context["messages"]
             )
+
             print("✅ Triage agent (with handoff) completed")
             print(f"📥 Triage result type: {type(triage_result)}")
             print(f"📥 Triage result: {triage_result}")

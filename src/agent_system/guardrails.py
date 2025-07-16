@@ -2,7 +2,7 @@ import os
 import openai
 
 # Input validation: check for empty or too long input
-def validate_input(text: str, max_length: int = 2000):
+def validate_input(text: str, max_length: int = 1099):
     """
     Validates user input for emptiness and length.
     """

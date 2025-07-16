@@ -95,7 +95,7 @@ async def add_chat_message(session: AsyncSession, session_id: str, content: str,
     await session.refresh(msg)
     return msg
 
-async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 10):
+async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 9):
     result = await session.execute(
         select(ChatMessage)
         .where(ChatMessage.session_id == session_id)
@@ -103,6 +103,46 @@ async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 1
         .limit(n)
     )
     return result.scalars().all()
+
+async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 9):
+    # 1) Fetch up to n recent messages
+    recent_rs = await session.execute(
+        select(ChatMessage)
+        .where(ChatMessage.session_id == session_id)
+        .order_by(ChatMessage.message_order.desc())
+        .limit(n)
+    )
+    messages = recent_rs.scalars().all()
+
+    # 2) If underflow and this is a follow-up, pull from the source session
+    if len(messages) < n:
+        info_rs = await session.execute(
+            select(ChatSession.session_type, ChatSession.source_message_metadata)
+            .where(ChatSession.session_id == session_id)
+            .limit(1)
+        )
+        sess_type, metadata = info_rs.one()
+        if sess_type == "follow_up":
+            src_msg_id = metadata["source_message_id"]
+            src_rs = await session.execute(
+                select(ChatMessage.session_id, ChatMessage.message_order)
+                .where(ChatMessage.message_id == src_msg_id)
+                .limit(1)
+            )
+            src_session_id, src_order = src_rs.one()
+
+            fallback_rs = await session.execute(
+                select(ChatMessage)
+                .where(ChatMessage.session_id == src_session_id)
+                .where(ChatMessage.message_order <= src_order)
+                .where(ChatMessage.is_summarized == False)
+                .order_by(ChatMessage.message_order.desc())
+                .limit(n - len(messages))
+            )
+            messages += fallback_rs.scalars().all()
+
+    # 3) Return in chronological order
+    return list(reversed(messages))
 
 # --- Research Requests ---
 async def create_research_request(session: AsyncSession, session_id: str, question: str, workflow_type: str, message_id: str = None):

@@ -8,6 +8,8 @@ class CertificationWorkflowAgent(Agent):
     def __init__(self, orchestrator):
         super().__init__(
             name="Certification workflow agent",
+            #TODO: edit the description and instruction
+            handoff_description = "",
             instructions=(
                 "You are a certification workflow agent.\n"
                 "You MUST always use the tool: handle_certification_list_workflow.\n"
