@@ -7,8 +7,8 @@ import time
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Agent, handoff
-from .agents import CertificationWorkflowAgent, ResearchWorkflowAgent
-from src.config.prompts import TRIAGE_AGENT_PROMPT
+from .agents import CertificationAgent, AnswerAgent
+from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
 from src.agent_system.internal import (
     store_message_db, store_final_response_db, store_research_request_db,
@@ -24,9 +24,7 @@ import asyncio
 #TODO: move it somewhere else?
 from pydantic import BaseModel, Field
 class ReasonArgs(BaseModel):
-    """
-    Arguments required by the CertificationWorkflowAgent.
-    """
+
     reason: str = Field(
         ...,
         description=(
@@ -133,17 +131,19 @@ class WorkflowOrchestrator:
         from src.agent_system.tools.core import set_global_orchestrator
         set_global_orchestrator(self)
         
-        self.certification_agent = CertificationWorkflowAgent(self)
-        self.research_agent = ResearchWorkflowAgent(self)
+        self.certification_agent = CertificationAgent(self)
+        self.answer_agent = AnswerAgent(self)
         self.triage_agent = Agent(
             name="Triage agent",
-            instructions=TRIAGE_AGENT_PROMPT,
+            instructions=TRIAGE_AGENT_INSTRUCTION,
             #TODO: handle the filter input
             handoffs=[
                 handoff(self.certification_agent,
                         input_type=ReasonArgs,
                         on_handoff=_print_reason),
-                handoff(self.research_agent)
+                handoff(self.answer_agent,
+                        input_type=ReasonArgs,
+                        on_handoff=_print_reason)
             ]
         )
         print("✅ WorkflowOrchestrator initialized successfully")
@@ -314,7 +314,7 @@ class WorkflowOrchestrator:
         print("📤 Returning raw results for OpenAI processing...")
         return all_results
     
-    async def handle_certification_list_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
+    async def search_relevant_certification(self, enhanced_query: str, context: dict, db: AsyncSession):
         """
         Specialized workflow for certification list requests.
         Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.
