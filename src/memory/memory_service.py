@@ -21,7 +21,6 @@ async def get_recent_context(db: AsyncSession, session_id: str, history_length: 
     # Get latest summary
     summary_obj = await get_latest_summary(db, session_id)
     summary = summary_obj.summary if summary_obj else None
-    up_to_order = summary_obj.up_to_message_order if summary_obj else 0
     
     # Get last 10 messages after the summary
     messages = await get_last_n_messages(db, session_id, history_length)
@@ -32,15 +31,12 @@ async def get_recent_context(db: AsyncSession, session_id: str, history_length: 
         formatted_messages.append({
             "role": msg.role,
             "content": msg.content,
-            "timestamp": msg.timestamp.isoformat() if msg.timestamp else None,
-            "message_order": msg.message_order
         })
-    
+
     return {
         "summary": summary, 
         "messages": formatted_messages,
         "message_count": len(formatted_messages),
-        "up_to_order": up_to_order
     }
 
 # Store summary after every 10th message

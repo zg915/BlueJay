@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 # Pydantic models for request/response
 class ChatRequest(BaseModel):
     session_id: str
-    message: str
+    content: str
 
 class ChatResponse(BaseModel):
     response: str
@@ -49,12 +49,12 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
     """
     print(f"\n📡 Streaming chat request received")
     print(f"💬 Session: {request.session_id}")
-    print(f"📝 Message: {request.message}")
+    print(f"📝 Content: {request.content}")
     try:
         # Run the full workflow (triage agent + handoff)
         result = await orchestrator.handle_user_question(
             request.session_id,
-            request.message,
+            request.content,
             db
         )
         # For streaming, just yield the result as a single event (or break into chunks if needed)
@@ -77,12 +77,12 @@ async def chat_simple(request: ChatRequest, db: AsyncSession):
     """
     print(f"\n💬 Simple chat request received")
     print(f"💬 Session: {request.session_id}")
-    print(f"📝 Message: {request.message}")
+    print(f"📝 Content: {request.content}")
     
     try:
         result = await orchestrator.handle_user_question(
             request.session_id, 
-            request.message,
+            request.content,
             db
         )
         
@@ -98,7 +98,7 @@ async def chat_simple(request: ChatRequest, db: AsyncSession):
         return ChatResponse(
             response=response_text,
             question_type="unknown",  # Could be extracted from triage response
-            enhanced_query=request.message  # Could be extracted from triage response
+            enhanced_query=request.content  # Could be extracted from triage response
         )
     
     except Exception as e:
