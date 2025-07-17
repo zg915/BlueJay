@@ -359,78 +359,42 @@ class WorkflowOrchestrator:
     async def search_relevant_certification(self, search_queries: list[str], db: AsyncSession):
         """
         Specialized workflow for certification list requests.
+        Runs RAG, Web, and DB search for each query in parallel, then combines and returns all results.
         """
         print(f"📋 Starting certification list workflow for: {search_queries}")
-        
-        # Execute all three search types in parallel with timing
-        log_with_time("🚀 Starting parallel certification search operations...")
-        all_results = await asyncio.gather(
-            #TODO: enable all three with multiple queries (parallel)
-            timed_task("RAG-Domain", self._rag_domain_search(search_queries)),
-            timed_task("General-Web", self._general_web_search(search_queries)),
-            timed_task("Internal-DB", self._lookup_past_certifications(search_queries, db)),
-            return_exceptions=True
-        )
-        
-        # Print timing table
-        print_timing_table(all_results)
-        
-        # Extract results from timed task results
-        rag_task_result = all_results[0] if not isinstance(all_results[0], Exception) else {"result": [], "status": "error"}
-        general_task_result = all_results[1] if not isinstance(all_results[1], Exception) else {"result": [], "status": "error"}
-        db_task_result = all_results[2] if not isinstance(all_results[2], Exception) else {"result": [], "status": "error"}
-        rag_domain_results = rag_task_result.get("result", []) if isinstance(rag_task_result, dict) else []
-        general_results = general_task_result.get("result", []) if isinstance(general_task_result, dict) else []
-        db_results = db_task_result.get("result", []) if isinstance(db_task_result, dict) else []
-        
-        # Log results from each parallel task
-        print(f"\n📊 PARALLEL CERTIFICATION TASK RESULTS:")
-        print(f"    🔍 RAG Domain Search Results: {len(rag_domain_results) if not isinstance(rag_domain_results, Exception) else 'ERROR'} items")
-        if not isinstance(rag_domain_results, Exception):
-            for i, result in enumerate(rag_domain_results[:3]):  # Show first 3 results
-                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
-            if len(rag_domain_results) > 3:
-                print(f"      ... and {len(rag_domain_results) - 3} more results")
-        else:
-            print(f"      ❌ RAG Domain Search Error: {rag_domain_results}")
-        
-        print(f"    🌐 General Web Search Results: {len(general_results) if not isinstance(general_results, Exception) else 'ERROR'} items")
-        if not isinstance(general_results, Exception):
-            for i, result in enumerate(general_results[:3]):  # Show first 3 results
-                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
-            if len(general_results) > 3:
-                print(f"      ... and {len(general_results) - 3} more results")
-        else:
-            print(f"      ❌ General Web Search Error: {general_results}")
-        
-        print(f"    🗄️ Internal DB Lookup Results: {len(db_results) if not isinstance(db_results, Exception) else 'ERROR'} items")
-        if not isinstance(db_results, Exception):
-            for i, result in enumerate(db_results[:3]):  # Show first 3 results
-                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
-            if len(db_results) > 3:
-                print(f"      ... and {len(db_results) - 3} more results")
-        else:
-            print(f"      ❌ Internal DB Lookup Error: {db_results}")
-        
-        print(f"📊 END PARALLEL CERTIFICATION TASK RESULTS\n")
-        
-        # Combine all results
+
+        # Launch 3 tasks per query (RAG, Web, DB)
+        tasks = []
+        for query in search_queries:
+            tasks.append(timed_task(f"RAG-Domain: {query}", self._rag_domain_search(query)))
+            tasks.append(timed_task(f"General-Web: {query}", self._general_web_search(query)))
+            tasks.append(timed_task(f"Internal-DB: {query}", self._lookup_past_certifications(query, db)))
+
+        all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
+        print_timing_table(all_task_results)
+
+        # Flatten and collect results, tagging with source query
         all_results = []
-        if not isinstance(rag_domain_results, Exception):
-            all_results.extend(rag_domain_results)
-        if not isinstance(general_results, Exception):
-            all_results.extend(general_results)
-        if not isinstance(db_results, Exception):
-            all_results.extend(db_results)
-        
-        print(f"✅ Combined {len(all_results)} total certification results from all sources")
-        
-        # Store the certification result
-        if all_results:
-            await self._store_certification_result(str(all_results), enhanced_query, db)
-        
-        # Return raw results for OpenAI processing
-        print("📤 Returning raw certification results for OpenAI processing...")
+        for idx, task_result in enumerate(all_task_results):
+            if isinstance(task_result, dict) and task_result.get("status") == "success":
+                # Each result is a list of dicts (certifications)
+                # Figure out which query this result came from
+                query_index = idx // 3
+                source_query = search_queries[query_index] if query_index < len(search_queries) else None
+                for item in task_result.get("result", []):
+                    # Attach the originating query for traceability
+                    if isinstance(item, dict):
+                        item['source_query'] = source_query
+                    all_results.append(item)
+            else:
+                print(f"❌ Task {idx} failed or returned no results.")
+
+        print(f"✅ Combined {len(all_results)} total certification results from all sources/queries")
+
+        # Optionally store results, etc.
+        # await self._store_certification_result(str(all_results), search_queries, db)
+
+        print("📤 Returning raw certification results for LLM deduplication and structuring...")
         return all_results
     
     async def _call_rag_api(self, query: str):
@@ -814,200 +778,15 @@ Raw Results ({len(meaningful_results)} items):
     async def _search_single_domain_with_prompt(self, query: str, domains: list, search_type: str):
         """Search with specific prompt based on search type"""
         from src.agent_system.internal import _perplexity_domain_search_impl
-        from src.config.prompts import PERPLEXITY_LIST_GENERAL_PROMPT, PERPLEXITY_LIST_DOMAIN_PROMPT
-        
-        # Choose prompt based on search type
-        if search_type == "domain":
-            prompt = PERPLEXITY_LIST_DOMAIN_PROMPT  # Domain-filtered search
-        else:
-            prompt = PERPLEXITY_LIST_GENERAL_PROMPT  # General web search
-        
+        # The prompt is now handled inside _perplexity_domain_search_impl
         try:
             # Call Perplexity with domain list
             result = await _perplexity_domain_search_impl(query, domains)
-            
-            # Debug: Log the raw result
-            print(f"    🔍 Raw Perplexity result type: {type(result)}")
-            print(f"    🔍 Raw Perplexity result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
-            
-            # Parse the JSON result with robust error handling
-            import json
-            import re
-            if isinstance(result, dict) and "choices" in result:
-                content = result["choices"][0]["message"]["content"]
-                print(f"    🔍 Perplexity content length: {len(content)}")
-                print(f"    🔍 Perplexity content preview: {content[:200]}...")
-                
-                try:
-                    # First try: direct JSON parsing
-                    parsed_result = json.loads(content)
-                    if isinstance(parsed_result, list):
-                        return parsed_result
-                    elif isinstance(parsed_result, dict):
-                        return [parsed_result]
-                    else:
-                        print(f"    ⚠️ Unexpected JSON structure for {search_type} search")
-                        return []
-                except json.JSONDecodeError as e:
-                    print(f"    ❌ JSON parsing failed for {search_type} search: {e}")
-                    print(f"    🔍 Raw content: {content[:200]}...")
-                    
-                    # Second try: Clean up common JSON issues
-                    try:
-                        # Fix common JSON issues
-                        cleaned_content = content
-                        
-                        # Fix unquoted property names
-                        cleaned_content = re.sub(r'(\w+):', r'"\1":', cleaned_content)
-                        
-                        # Handle unterminated strings by truncating at the error point
-                        # Find where the JSON breaks and extract complete objects
-                        json_objects = []
-                        
-                        # Try to find complete JSON objects by looking for balanced braces
-                        brace_count = 0
-                        start_pos = -1
-                        in_string = False
-                        escape_next = False
-                        
-                        for i, char in enumerate(cleaned_content):
-                            if escape_next:
-                                escape_next = False
-                                continue
-                            
-                            if char == '\\':
-                                escape_next = True
-                                continue
-                            
-                            if char == '"' and not escape_next:
-                                in_string = not in_string
-                                continue
-                            
-                            if not in_string:
-                                if char == '{':
-                                    if brace_count == 0:
-                                        start_pos = i
-                                    brace_count += 1
-                                elif char == '}':
-                                    brace_count -= 1
-                                    if brace_count == 0 and start_pos != -1:
-                                        # Try to parse this complete object
-                                        try:
-                                            obj_str = cleaned_content[start_pos:i+1]
-                                            obj = json.loads(obj_str)
-                                            json_objects.append(obj)
-                                        except json.JSONDecodeError:
-                                            continue
-                                        start_pos = -1
-                        
-                        if json_objects:
-                            print(f"    ✅ Recovered {len(json_objects)} valid JSON objects from malformed response")
-                            return json_objects
-                        
-                        # Third try: String truncation and repair
-                        print(f"    🔍 Attempting string truncation and repair...")
-                        try:
-                            # Find the error position and truncate
-                            error_pos = content.find('Unterminated string')
-                            if error_pos == -1:
-                                # Try to find where strings are likely to be unterminated
-                                lines = content.split('\n')
-                                repaired_lines = []
-                                
-                                for line in lines:
-                                    # Check for unterminated strings in this line
-                                    quote_count = line.count('"')
-                                    if quote_count % 2 == 1:  # Odd number of quotes
-                                        # Try to fix by adding a closing quote
-                                        if line.strip().endswith(','):
-                                            line = line.rstrip(',') + '",'
-                                        elif line.strip().endswith('}'):
-                                            line = line.rstrip('}') + '"}'
-                                        else:
-                                            line = line + '"'
-                                    repaired_lines.append(line)
-                                
-                                repaired_content = '\n'.join(repaired_lines)
-                                
-                                # Try to parse the repaired content
-                                try:
-                                    parsed_result = json.loads(repaired_content)
-                                    if isinstance(parsed_result, list):
-                                        print(f"    ✅ Repaired JSON and parsed {len(parsed_result)} objects")
-                                        return parsed_result
-                                    elif isinstance(parsed_result, dict):
-                                        print(f"    ✅ Repaired JSON and parsed 1 object")
-                                        return [parsed_result]
-                                except json.JSONDecodeError:
-                                    print(f"    ❌ JSON repair failed")
-                            else:
-                                print(f"    ❌ Could not determine error position")
-                        except Exception as repair_error:
-                            print(f"    ❌ String repair failed: {repair_error}")
-                        
-                        # Fourth try: Manual extraction of certification objects
-                        print(f"    🔍 Attempting manual extraction of certification data...")
-                        manual_objects = []
-                        
-                        # Look for certificate patterns in the raw content
-                        cert_patterns = [
-                            r'"certificate_name":\s*"([^"]+)"',
-                            r'"certificate_description":\s*"([^"]*)"',
-                            r'"is_required":\s*(true|false)'
-                        ]
-                        
-                        # Extract what we can from the malformed JSON
-                        lines = content.split('\n')
-                        current_obj = {}
-                        
-                        for line in lines:
-                            line = line.strip()
-                            if line.startswith('{'):
-                                current_obj = {}
-                            elif line.startswith('"certificate_name"'):
-                                match = re.search(r'"certificate_name":\s*"([^"]+)"', line)
-                                if match:
-                                    current_obj['certificate_name'] = match.group(1)
-                            elif line.startswith('"certificate_description"'):
-                                match = re.search(r'"certificate_description":\s*"([^"]*)"', line)
-                                if match:
-                                    current_obj['certificate_description'] = match.group(1)
-                            elif line.startswith('"is_required"'):
-                                match = re.search(r'"is_required":\s*(true|false)', line)
-                                if match:
-                                    current_obj['is_required'] = match.group(1) == 'true'
-                            elif line.startswith('}'):
-                                if 'certificate_name' in current_obj:
-                                    manual_objects.append(current_obj.copy())
-                        
-                        if manual_objects:
-                            print(f"    ✅ Manually extracted {len(manual_objects)} certification objects")
-                            return manual_objects
-                        else:
-                            print(f"    ❌ Could not recover any valid JSON objects")
-                            return []
-                            
-                    except Exception as cleanup_error:
-                        print(f"    ❌ JSON cleanup also failed: {cleanup_error}")
-                    return []
-            else:
-                print(f"    ⚠️ Unexpected Perplexity response format for {search_type} search")
-                return []
-                
+            print(f"    🔍 Perplexity result type: {type(result)}")
+            print(f"    🔍 Perplexity result length: {len(result) if isinstance(result, list) else 'N/A'}")
+            return result if result else []
         except Exception as e:
             print(f"    ❌ {search_type} search failed: {e}")
             return []
         
-        # Fallback: Return mock data if no results found
-        print(f"    ⚠️ No results found for {search_type} search, returning mock data")
-        return [
-            {
-                "certificate_name": f"Mock {search_type.title()} Certificate",
-                "certificate_description": f"Test certification data for {query}",
-                "legal_regulation": "Mock Regulation 2024",
-                "legal_text_excerpt": "This is a mock legal text excerpt for testing purposes.",
-                "legal_text_meaning": "This mock regulation requires basic compliance testing.",
-                "registration_fee": "USD 100 (~$100.00 USD)",
-                "is_required": True
-            }
-        ] 
+       
