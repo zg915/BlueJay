@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Agent, handoff
 from .agents import CertificationAgent, AnswerAgent
 from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
+from src.config.output_structure import Reason_Structure
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
 from src.agent_system.internal import (
     store_message_db, store_final_response_db, store_research_request_db,
@@ -122,7 +123,7 @@ class WorkflowOrchestrator:
         print("🔧 Initializing WorkflowOrchestrator...")
         #TODO: move it somewhere else?
         def _print_reason(context, input):
-            print("\n\n\n", input, "\n\n\n")
+            print("\n\n\nreason of choosing the worflow: ", input, "\n\n\n")
             pass
         # Set the global orchestrator for tools to access
         from src.agent_system.tools.core import set_global_orchestrator
@@ -142,10 +143,10 @@ class WorkflowOrchestrator:
             handoffs=[
                 handoff(self.certification_agent,
                         tool_name_override="transfer_to_certification_workflow",
-                        input_type=ReasonArgs,
+                        input_type=Reason_Structure,
                         on_handoff=_print_reason),
                 handoff(self.answer_agent,
-                        input_type=ReasonArgs,
+                        input_type=Reason_Structure,
                         on_handoff=_print_reason)
             ]
         )
@@ -277,77 +278,33 @@ class WorkflowOrchestrator:
 
 
  
-    async def handle_general_research_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
+    async def compliance_research(self, search_queries: list[str]):
         """
-        General research workflow for non-certification requests.
+        Specialized workflow for compliance requests.
+        Runs RAG, Web, and DB search for each query in parallel, then combines and returns all results.
         """
-        print(f"🔬 Starting general research workflow for: {enhanced_query}")
-        
-        # Execute all three search types in parallel with timing
-        log_with_time("🚀 Starting parallel search operations...")
-        all_results = await asyncio.gather(
-            timed_task("RAG-Domain", self._domain_web_search(enhanced_query)),
-            timed_task("General-Web", self._general_web_search(enhanced_query)),
-            # timed_task("Internal-DB", self._lookup_past_certifications(enhanced_query, db)),
-            return_exceptions=True
-        )
-        
-        # Print timing table
-        print_timing_table(all_results)
-        
-        # Extract results from timed task results
-        rag_task_result = all_results[0] if not isinstance(all_results[0], Exception) else {"result": [], "status": "error"}
-        general_task_result = all_results[1] if not isinstance(all_results[1], Exception) else {"result": [], "status": "error"}
-        db_task_result = all_results[2] if not isinstance(all_results[2], Exception) else {"result": [], "status": "error"}
-        rag_domain_results = rag_task_result.get("result", []) if isinstance(rag_task_result, dict) else []
-        general_results = general_task_result.get("result", []) if isinstance(general_task_result, dict) else []
-        db_results = db_task_result.get("result", []) if isinstance(db_task_result, dict) else []
-            
-        # Log results from each parallel task
-        print(f"\n📊 PARALLEL TASK RESULTS:")
-        print(f"    🔍 RAG Domain Search Results: {len(rag_domain_results) if not isinstance(rag_domain_results, Exception) else 'ERROR'} items")
-        if not isinstance(rag_domain_results, Exception):
-            for i, result in enumerate(rag_domain_results[:3]):  # Show first 3 results
-                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
-            if len(rag_domain_results) > 3:
-                print(f"      ... and {len(rag_domain_results) - 3} more results")
-        else:
-            print(f"      ❌ RAG Domain Search Error: {rag_domain_results}")
-        
-        print(f"    🌐 General Web Search Results: {len(general_results) if not isinstance(general_results, Exception) else 'ERROR'} items")
-        if not isinstance(general_results, Exception):
-            for i, result in enumerate(general_results[:3]):  # Show first 3 results
-                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
-            if len(general_results) > 3:
-                print(f"      ... and {len(general_results) - 3} more results")
-        else:
-            print(f"      ❌ General Web Search Error: {general_results}")
-        
-        print(f"    🗄️ Internal DB Lookup Results: {len(db_results) if not isinstance(db_results, Exception) else 'ERROR'} items")
-        if not isinstance(db_results, Exception):
-            for i, result in enumerate(db_results[:3]):  # Show first 3 results
-                print(f"      {i+1}. {result.get('certificate_name', 'Unknown')} - {result.get('certificate_description', 'No description')[:50]}...")
-            if len(db_results) > 3:
-                print(f"      ... and {len(db_results) - 3} more results")
-        else:
-            print(f"      ❌ Internal DB Lookup Error: {db_results}")
-        
-        print(f"📊 END PARALLEL TASK RESULTS\n")
-        
-        # Combine all results
-        all_results = []
-        if not isinstance(rag_domain_results, Exception):
-            all_results.extend(rag_domain_results)
-        if not isinstance(general_results, Exception):
-            all_results.extend(general_results)
-        if not isinstance(db_results, Exception):
-            all_results.extend(db_results)
-        
-        print(f"✅ Combined {len(all_results)} total results from all sources")
-        
-        # Return raw results for OpenAI processing
-        print("📤 Returning raw results for OpenAI processing...")
-        return all_results
+        print(f"📋 Starting compliance workflow for: {search_queries}")
+
+        # Launch 3 tasks per query (RAG, Web, DB)
+        tasks = []
+        try:
+            for query in search_queries:
+                tasks.append(timed_task(f"Domain_web_search: {query}", self._web_search(query, use_domain = True)))
+                tasks.append(timed_task(f"web_search: {query}", self._web_search(query, use_domain = False)))
+                # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
+            all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
+            print_timing_table(all_task_results)
+
+            # Flatten and collect results, tagging with source query
+            all_results = {}
+            for idx, task_result in enumerate(all_task_results):
+                if isinstance(task_result, dict) and task_result.get("status") == "success":
+                    all_results["answer_{0}".format(idx)] = task_result["result"]
+
+            print("📤 Returning raw certification results for LLM deduplication and structuring...")
+            return all_results
+        except Exception as e:
+            print(f"❌ Error in search_relevant_certification: {e}")
     
     async def search_relevant_certification(self, search_queries: list[str]):
         """
@@ -361,8 +318,8 @@ class WorkflowOrchestrator:
         try:
             #TODO: change the search_queries back to all
             for query in search_queries[:1]:
-                tasks.append(timed_task(f"Domain_Web_Search: {query}", self._certification_web_search(query, use_domain = True)))
-                tasks.append(timed_task(f"Web_Search: {query}", self._certification_web_search(query, use_domain = False)))
+                tasks.append(timed_task(f"Domain_web_search: {query}", self._certification_web_search(query, use_domain = True)))
+                tasks.append(timed_task(f"web_search: {query}", self._certification_web_search(query, use_domain = False)))
                 # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
             all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
             print_timing_table(all_task_results)
