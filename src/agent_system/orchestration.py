@@ -154,7 +154,7 @@ class WorkflowOrchestrator:
 
     async def handle_user_question(self, session_id: str, message: str, db: AsyncSession):
         """
-        Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → streaming
+        Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → true agent streaming
         """
         print(f"\n🚀 Starting workflow for session: {session_id}")
         print(f"📝 User message: {message}")
@@ -174,42 +174,58 @@ class WorkflowOrchestrator:
             print("\n🎯 Running triage agent with handoffs...")
             summary_memory = context["summary"]
 
-            triage_result = await Runner.run(
+            # Use true agent streaming
+            result = Runner.run_streamed(
                 starting_agent=self.triage_agent,
                 input=message
             )
-            workflow_output = triage_result.final_output if hasattr(triage_result, 'final_output') else triage_result
-            print(f"📊 Workflow output type: {type(workflow_output)}")
-            print(f"📊 Workflow output length: {len(workflow_output) if isinstance(workflow_output, list) else 'N/A'}")
+            async for event in result.stream_events():
+                output = None
+                if event.type == "run_item_stream_event":
+                    item = event.item
+                    # Message output
+                    if getattr(item, 'type', None) == "message_output_item":
+                        from agents import ItemHelpers
+                        output = ItemHelpers.text_message_output(item)
+                    # Tool output
+                    elif getattr(item, 'type', None) == "tool_call_output_item":
+                        output = getattr(item, 'output', None)
 
-            # Stream one certification at a time if Certifications_Structure
-            if isinstance(workflow_output, Certifications_Structure):
-                for cert in workflow_output.certifications:
-                    yield cert
-            elif isinstance(workflow_output, list):
-                for item in workflow_output:
-                    yield item
-            elif isinstance(workflow_output, str):
-                try:
-                    parsed = json.loads(workflow_output)
-                    if isinstance(parsed, list):
-                        for item in parsed:
-                            yield item
-                    elif isinstance(parsed, dict) and 'content' in parsed:
-                        yield parsed['content']
-                    elif isinstance(parsed, dict):
-                        for key, value in parsed.items():
-                            if isinstance(value, list):
-                                for item in value:
-                                    yield item
-                            else:
-                                yield {key: value}
+                if output is not None:
+                    # Handle JSON strings
+                    if isinstance(output, str):
+                        try:
+                            output = json.loads(output)
+                        except Exception:
+                            pass  # Not JSON, keep as string
+
+                    # Handle CertificationAgent output (Certifications_Structure or dict with certifications)
+                    if isinstance(output, Certifications_Structure):
+                        for cert in output.certifications:
+                            yield cert
+                    elif isinstance(output, dict):
+                        # Check for nested certifications structure
+                        if 'certifications' in output:
+                            certs = output['certifications']
+                            if isinstance(certs, dict) and 'certifications' in certs:
+                                certs = certs['certifications']
+                            if isinstance(certs, list):
+                                for cert in certs:
+                                    yield cert
+                                continue
+                        # Check for list of certifications in any key
+                        for key, value in output.items():
+                            if isinstance(value, list) and len(value) > 0:
+                                if all(isinstance(item, dict) and 'certificate_name' in item for item in value):
+                                    for cert in value:
+                                        yield cert
+                                    continue
+                    # Handle AnswerAgent output (formatted text)
+                    elif isinstance(output, str):
+                        yield output
+                    # Handle other outputs as-is
                     else:
-                        yield parsed
-                except json.JSONDecodeError:
-                    yield workflow_output
-            else:
-                yield workflow_output
+                        yield output
 
         except Exception as e:
             print(f"❌ Error in handle_user_question: {e}")

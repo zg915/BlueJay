@@ -44,41 +44,32 @@ print("✅ WorkflowOrchestrator initialized for endpoints")
 
 # Streaming chat endpoint
 async def chat_stream(request: ChatRequest, db: AsyncSession):
-    """
-    Streaming chat endpoint that provides real-time updates using the triage agent and agentic handoff system
-    """
     print(f"\n📡 Streaming chat request received")
     print(f"💬 Session: {request.session_id}")
     print(f"📝 Content: {request.content}")
-    try:
-        # Helper to make results JSON serializable
-        def to_serializable(obj):
-            if isinstance(obj, BaseModel):
-                return obj.model_dump()
-            elif isinstance(obj, list):
-                return [to_serializable(item) for item in obj]
-            elif isinstance(obj, dict):
-                return {k: to_serializable(v) for k, v in obj.items()}
-            return obj
+    def to_serializable(obj):
+        if isinstance(obj, BaseModel):
+            return obj.model_dump()
+        elif isinstance(obj, list):
+            return [to_serializable(item) for item in obj]
+        elif isinstance(obj, dict):
+            return {k: to_serializable(v) for k, v in obj.items()}
+        return obj
 
-        # Streaming generator
-        async def event_stream():
-            async for result in orchestrator.handle_user_question(
-                request.session_id,
-                request.content,
-                db
-            ):
-                yield f"data: {json.dumps({'status': 'stream', 'response': to_serializable(result)}, ensure_ascii=False)}\n\n"
-            yield f"data: {json.dumps({'status': 'end'})}\n\n"
+    async def event_stream():
+        async for result in orchestrator.handle_user_question(
+            request.session_id,
+            request.content,
+            db
+        ):
+            yield f"data: {json.dumps({'status': 'stream', 'response': to_serializable(result)}, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'status': 'end'})}\n\n"
 
-        return StreamingResponse(
-            event_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
-        )
-    except Exception as e:
-        print(f"❌ Error in streaming chat: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
+    )
 
 # Non-streaming chat endpoint
 async def chat_simple(request: ChatRequest, db: AsyncSession):
