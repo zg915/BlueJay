@@ -66,30 +66,40 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
     return await global_orchestrator.search_relevant_certification(search_queries)
 
 @function_tool
-async def Web_Search(search_queries: list[str]):
+async def web_search(search_queries: list[str]):
+    """Perform web search using the provided search queries.
+
+    Args:
+        search_queries: English search strings used to search the internet
+
+    Returns:
+        A JSON‑serialisable object containing the search results.
+    """
     if global_orchestrator is None:
         raise RuntimeError(
             "Orchestrator not set. Call set_certification_workflow_orchestrator first."
         )
-    return await global_orchestrator.Web_Search(search_queries)
+    return await global_orchestrator.web_search(search_queries)
 
 @function_tool
-async def handle_general_research_workflow(enhanced_query: str, context_json: Optional[str] = None):
+async def compliance_research(search_queries: list[str]):
+    """Perform web search and Compliance Database search to provide professional compliance answers.
+
+    Args:
+        search_queries: English search strings used to search the internet and databases
+
+    Returns:
+        A JSON‑serialisable object containing the combined search results.
     """
-    Specialized workflow for general research requests.
-    """
-    print(f"🔬 Starting general research workflow for: {enhanced_query}")
-    context = safe_parse_context(context_json)
     if global_orchestrator is None:
         raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
-    db = getattr(global_orchestrator, 'db', None)
-    return await global_orchestrator.handle_general_research_workflow(enhanced_query, context, db)
+    return await global_orchestrator.compliance_research(search_queries)
 
 
-@function_tool
-def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
-    from src.agent_system.internal import _call_rag_api_impl
-    return _call_rag_api_impl(text, dataset_id, limit, similarity, search_mode, using_re_rank)
+# @function_tool
+# def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
+#     from src.agent_system.internal import _call_rag_api_impl
+#     return _call_rag_api_impl(text, dataset_id, limit, similarity, search_mode, using_re_rank)
 
 # @function_tool
 # def generate_search_queries(enhanced_query: str, num_queries: int = 4):
@@ -101,16 +111,16 @@ def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarit
 #     from . import _map_queries_to_websites_impl
 #     return _map_queries_to_websites_impl(queries, domain_metadata)
 
-@function_tool
-def create_parallel_queries(queries: list[str]):
-    return queries
+# @function_tool
+# def create_parallel_queries(queries: list[str]):
+#     return queries
 
-@function_tool
-async def run_parallel_queries(query_funcs: list[str]):
-    import asyncio
-    results = await asyncio.gather(*[func() for func in query_funcs])
-    return results
+# @function_tool
+# async def run_parallel_queries(query_funcs: list[str]):
+#     import asyncio
+#     results = await asyncio.gather(*[func() for func in query_funcs])
+#     return results
 
-@function_tool
-def synthesize_results(results: list[str]):
-    return "\n".join(str(r) for r in results)
+# @function_tool
+# def synthesize_results(results: list[str]):
+#     return "\n".join(str(r) for r in results)
