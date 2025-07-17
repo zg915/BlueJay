@@ -231,8 +231,9 @@ class WorkflowOrchestrator:
         tasks = []
         try:
             for query in search_queries:
-                tasks.append(timed_task(f"Domain_web_search: {query}", self._web_search(query, use_domain = True)))
-                tasks.append(timed_task(f"web_search: {query}", self._web_search(query, use_domain = False)))
+                tasks.append(timed_task(f"Domain_web_search: {query}", self.web_search(query, use_domain = True)))
+                tasks.append(timed_task(f"web_search: {query}", self.web_search(query, use_domain = False)))
+                #TODO: add the RAG
                 # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
             all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
             print_timing_table(all_task_results)
@@ -243,10 +244,10 @@ class WorkflowOrchestrator:
                 if isinstance(task_result, dict) and task_result.get("status") == "success":
                     all_results["answer_{0}".format(idx)] = task_result["result"]
 
-            print("📤 Returning raw certification results for LLM deduplication and structuring...")
+            print("📤 Returning raw results for LLM deduplication and structuring...")
             return all_results
         except Exception as e:
-            print(f"❌ Error in search_relevant_certification: {e}")
+            print(f"❌ Error in compliance_research: {e}")
     
     async def search_relevant_certification(self, search_queries: list[str]):
         """
@@ -258,10 +259,10 @@ class WorkflowOrchestrator:
         # Launch 3 tasks per query (RAG, Web, DB)
         tasks = []
         try:
-            #TODO: change the search_queries back to all
-            for query in search_queries[:1]:
-                tasks.append(timed_task(f"Domain_web_search: {query}", self._certification_web_search(query, use_domain = True)))
-                tasks.append(timed_task(f"web_search: {query}", self._certification_web_search(query, use_domain = False)))
+            for query in search_queries:
+                tasks.append(timed_task(f"Domain_web_search: {query}", self._ertification_web_search(query, use_domain = True)))
+                tasks.append(timed_task(f"web_search: {query}", self.certification_web_search(query, use_domain = False)))
+                #TODO: add the RAG
                 # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
             all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
             print_timing_table(all_task_results)
@@ -296,14 +297,9 @@ class WorkflowOrchestrator:
             print(f"❌ Error in search_relevant_certification: {e}")
 
     
-    
-    async def _store_certification_result(self, results: str, query: str, db: AsyncSession):
-        """Store certification result and metadata"""
-        # TODO: Implement result storage
-        # This would store the final result with metadata
-        pass 
 
-    async def _certification_web_search(self, query: str, use_domain: bool = False):
+
+    async def certification_web_search(self, query: str, use_domain: bool = False):
         """RAG API + Domain Search: Get domain metadata and search with domain filter"""
         from src.agent_system.internal import _domain_search_kb, _perplexity_certification_search
         try:
@@ -319,4 +315,19 @@ class WorkflowOrchestrator:
             print(f"❌ domain web search failed: {e}")
             return {}
     
+    async def web_search(self, query: str, use_domain: bool = False):
+        """RAG API + Domain Search: Get domain metadata and search with domain filter"""
+        from src.agent_system.internal import _domain_search_kb, _perplexity_search
+        try:
+            if use_domain:
+                domains = await _domain_search_kb(query)
+            else:
+                domains = None
+
+            result = await _perplexity_search(query, domains)
+            return result
+            
+        except Exception as e:
+            print(f"❌ domain web search failed: {e}")
+            return {}
        
