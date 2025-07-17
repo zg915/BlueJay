@@ -15,7 +15,11 @@ class ResearchWorkflowAgent(Agent):
                 "You MUST always use the tool: handle_general_research_workflow.\n"
                 "After receiving the list of research results, deduplicate them using your own reasoning—do not call any deduplication tool.\n"
                 "Only return unique results, grouped by their official name or title.\n"
-                "Stream each unique result as a separate response.\n"
+                "Return the results as a simple JSON array of research objects, each with these fields:\n"
+                "- title\n"
+                "- content\n"
+                "- source\n"
+                "- relevance_score\n"
                 "NEVER respond directly to the user. If you cannot use the tool, return an error.\n"
                 "Always return structured data that can be processed by the main system."
             ),
