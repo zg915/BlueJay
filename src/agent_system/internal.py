@@ -11,6 +11,7 @@ from openai import OpenAI
 import json
 import re
 from typing import List, Dict, Any, Optional
+from pydantic import BaseModel, RootModel
 
 async def _call_rag_api_impl(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
     """
@@ -201,50 +202,47 @@ def map_queries_to_websites(queries: list[str], domain_metadata: str):
     
     return mapping
 
+class Certification(BaseModel):
+    certificate_name: str
+    certificate_description: str
+    legal_regulation: str
+    legal_text_excerpt: str
+    legal_text_meaning: str
+    registration_fee: str
+    is_required: bool
+
+class CertificationList(RootModel[list[Certification]]):
+    pass
+
 async def _perplexity_domain_search_impl(query: str, domains: list = None):
     """
-    Internal implementation of Perplexity domain search.
-    Now accepts a list of domains to search across all at once.
+    Internal implementation of Perplexity domain search using structured output.
     """
     api_key = os.getenv("PERPLEXITY_API_KEY")
-    
     if not api_key:
         print("❌ PERPLEXITY_API_KEY not found in environment variables")
-        return {}
-    
+        return []
+
     url = "https://api.perplexity.ai/chat/completions"
-    
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-    
-    # Import the appropriate prompt based on domain
+
     from src.config.prompts import PERPLEXITY_LIST_GENERAL_PROMPT, PERPLEXITY_LIST_DOMAIN_PROMPT
-    
-    # Choose prompt based on whether domains are specified
     if domains and len(domains) > 0:
         system_prompt = PERPLEXITY_LIST_DOMAIN_PROMPT
-        # Add domain information to the query
         domain_list = ", ".join(domains)
         enhanced_query = f"{query} (search across these domains: {domain_list})"
     else:
         system_prompt = PERPLEXITY_LIST_GENERAL_PROMPT
         enhanced_query = query
-    
-    # Build messages array with system prompt
+
     messages = [
-        {
-            "role": "system",
-            "content": system_prompt
-        },
-        {
-            "role": "user",
-            "content": f"Search for: {enhanced_query}"
-    }
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": f"Search for: {enhanced_query}"}
     ]
-    
-    # Add domain_search parameter if domains are provided
+
     payload = {
         "model": "sonar-pro",
         "messages": messages,
@@ -252,52 +250,41 @@ async def _perplexity_domain_search_impl(query: str, domains: list = None):
         "temperature": 0.1,
         "response_format": {
             "type": "json_schema",
-            "json_schema": {
-                "schema": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "certificate_name": {"type": "string"},
-                            "certificate_description": {"type": "string"},
-                            "legal_regulation": {"type": "string"},
-                            "legal_text_excerpt": {"type": "string"},
-                            "legal_text_meaning": {"type": "string"},
-                            "registration_fee": {"type": "string"},
-                            "is_required": {"type": "boolean"}
-                        },
-                        "required": ["certificate_name", "certificate_description", "legal_regulation", "legal_text_excerpt", "legal_text_meaning", "registration_fee", "is_required"]
-                    }
-                }
-            }
+            "json_schema": {"schema": CertificationList.model_json_schema()}
         }
     }
-    
-    # If multiple domains, we'll search without domain filter but include them in the prompt
-    # Perplexity API doesn't support multiple domains in domain_search parameter
     if domains and len(domains) == 1:
         payload["domain_search"] = domains[0]
-    
+
     try:
         if domains and len(domains) > 1:
             print(f"🔍 Calling Perplexity API with {len(domains)} domains: {domains[:3]}..., query: {query[:50]}...")
         else:
             domain_str = domains[0] if domains else "general"
             print(f"🔍 Calling Perplexity API with domain: {domain_str}, query: {query[:50]}...")
-        
+
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 200:
                     result = await response.json()
                     print(f"✅ Perplexity API successful")
-                    return result
+                    # Expecting result["choices"][0]["message"]["content"] to be a JSON array
+                    content = result["choices"][0]["message"]["content"]
+                    print(f"    🔍 Perplexity content preview: {content[:200]}...")
+                    try:
+                        cert_list = CertificationList.model_validate_json(content)
+                        print(f"✅ Parsed {len(cert_list.root)} certifications from Perplexity response")
+                        # Return as list of dicts for downstream compatibility
+                        return [c.model_dump() for c in cert_list.root]
+                    except Exception as e:
+                        print(f"❌ Pydantic parsing failed: {e}")
+                        return []
                 else:
                     print(f"❌ Perplexity API failed with status {response.status}: {await response.text()}")
-                    return {}
-            
+                    return []
     except Exception as e:
         print(f"❌ Perplexity API exception: {e}")
-        return {}
+        return []
 
 def perplexity_domain_search(query: str, domains: list = None):
     """
