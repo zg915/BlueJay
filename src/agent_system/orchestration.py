@@ -12,12 +12,9 @@ from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
 from src.agent_system.internal import (
     store_message_db, store_final_response_db, store_research_request_db,
-    get_recent_context_db, store_context_db,
-    generate_search_queries, map_queries_to_websites
+    get_recent_context_db, store_context_db
 )
-from src.agent_system.tools import (
-    generate_search_queries, map_queries_to_websites, perplexity_domain_search, synthesize_results
-)
+
 from agents import Runner
 import asyncio
 
@@ -139,6 +136,7 @@ class WorkflowOrchestrator:
 
         self.triage_agent = Agent(
             name="Triage agent",
+            model="gpt-4o",
             instructions=TRIAGE_AGENT_INSTRUCTION,
             #TODO: handle the filter input
             handoffs=[
@@ -177,7 +175,8 @@ class WorkflowOrchestrator:
             input_moderation(message)
             print("✅ Input moderation passed")
             # Load last 5 messages for context
-            context = await get_recent_context_db(db, session_id, 7)
+            #TODO: change the context window back to 7
+            context = await get_recent_context_db(db, session_id, 3)
             print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
             # Run triage agent (which will handoff automatically)
             print("\n🎯 Running triage agent with handoffs...")
@@ -188,13 +187,8 @@ class WorkflowOrchestrator:
                 starting_agent=self.triage_agent,
                 input=message  # Use the actual user message, not context messages
             )
-
-            print("✅ Triage agent (with handoff) completed")
-            print(f"📥 Triage result type: {type(triage_result)}")
-            print(f"📥 Triage result: {triage_result}")
+            #TODO: delete everything below
             # Debug: Check if the triage agent actually called a workflow agent
-            if hasattr(triage_result, 'last_agent'):
-                print(f"🔍 Last agent in chain: {triage_result.last_agent.name if triage_result.last_agent else 'None'}")
             if hasattr(triage_result, 'raw_responses'):
                 print(f"🔍 Number of raw responses: {len(triage_result.raw_responses) if triage_result.raw_responses else 0}")
                 for i, response in enumerate(triage_result.raw_responses or []):
@@ -203,7 +197,6 @@ class WorkflowOrchestrator:
             workflow_output = triage_result.final_output if hasattr(triage_result, 'final_output') else triage_result
             print(f"📊 Workflow output type: {type(workflow_output)}")
             print(f"📊 Workflow output length: {len(workflow_output) if isinstance(workflow_output, list) else 'N/A'}")
-            print(f"📊 Workflow output preview: {str(workflow_output)[:500]}...")
             
             # Handle different types of workflow output
             # Check if the agent returned structured, deduplicated results
@@ -293,9 +286,9 @@ class WorkflowOrchestrator:
         # Execute all three search types in parallel with timing
         log_with_time("🚀 Starting parallel search operations...")
         all_results = await asyncio.gather(
-            timed_task("RAG-Domain", self._rag_domain_search(enhanced_query)),
+            timed_task("RAG-Domain", self._domain_web_search(enhanced_query)),
             timed_task("General-Web", self._general_web_search(enhanced_query)),
-            timed_task("Internal-DB", self._lookup_past_certifications(enhanced_query, db)),
+            # timed_task("Internal-DB", self._lookup_past_certifications(enhanced_query, db)),
             return_exceptions=True
         )
         
@@ -356,7 +349,7 @@ class WorkflowOrchestrator:
         print("📤 Returning raw results for OpenAI processing...")
         return all_results
     
-    async def search_relevant_certification(self, search_queries: list[str], db: AsyncSession):
+    async def search_relevant_certification(self, search_queries: list[str]):
         """
         Specialized workflow for certification list requests.
         Runs RAG, Web, and DB search for each query in parallel, then combines and returns all results.
@@ -365,87 +358,45 @@ class WorkflowOrchestrator:
 
         # Launch 3 tasks per query (RAG, Web, DB)
         tasks = []
-        for query in search_queries:
-            tasks.append(timed_task(f"RAG-Domain: {query}", self._rag_domain_search(query)))
-            tasks.append(timed_task(f"General-Web: {query}", self._general_web_search(query)))
-            tasks.append(timed_task(f"Internal-DB: {query}", self._lookup_past_certifications(query, db)))
-
-        all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
-        print_timing_table(all_task_results)
-
-        # Flatten and collect results, tagging with source query
-        all_results = []
-        for idx, task_result in enumerate(all_task_results):
-            if isinstance(task_result, dict) and task_result.get("status") == "success":
-                # Each result is a list of dicts (certifications)
-                # Figure out which query this result came from
-                query_index = idx // 3
-                source_query = search_queries[query_index] if query_index < len(search_queries) else None
-                for item in task_result.get("result", []):
-                    # Attach the originating query for traceability
-                    if isinstance(item, dict):
-                        item['source_query'] = source_query
-                    all_results.append(item)
-            else:
-                print(f"❌ Task {idx} failed or returned no results.")
-
-        print(f"✅ Combined {len(all_results)} total certification results from all sources/queries")
-
-        # Optionally store results, etc.
-        # await self._store_certification_result(str(all_results), search_queries, db)
-
-        print("📤 Returning raw certification results for LLM deduplication and structuring...")
-        return all_results
-    
-    async def _call_rag_api(self, query: str):
-        """Call RAG API to get domain metadata"""
-        from src.agent_system.internal import _call_rag_api_impl
-        return await _call_rag_api_impl(query)
-    
-    async def _generate_search_queries(self, enhanced_query: str):
-        """Generate multiple search queries from enhanced query"""
-        result = generate_search_queries(enhanced_query)
-        return result.get("queries", [])
-    
-    async def _map_queries_to_websites(self, queries: list[str], domain_metadata: dict):
-        """Map queries to relevant websites"""
-        import json
-        metadata_str = json.dumps(domain_metadata)
-        return map_queries_to_websites(queries, metadata_str)
-    
-    async def _parallel_web_search(self, query_website_mapping: dict):
-        """Perform parallel web searches for each query-website pair"""
-        import asyncio
-        
-        search_tasks = []
-        for query, websites in query_website_mapping.items():
-            for website in websites:
-                task = self._search_single_website(query, website)
-                search_tasks.append(task)
-        
-        results = await asyncio.gather(*search_tasks, return_exceptions=True)
-        return [r for r in results if not isinstance(r, Exception)]
-    
-    async def _search_single_website(self, query: str, website: str):
-        """Search a single website for a query"""
         try:
-            result = perplexity_domain_search(query, website)
-            return {
-                "query": query,
-                "website": website,
-                "result": result
-            }
+            #TODO: change the search_queries back to all
+            for query in search_queries[:1]:
+                tasks.append(timed_task(f"Domain_Web_Search: {query}", self._certification_web_search(query, use_domain = True)))
+                tasks.append(timed_task(f"Web_Search: {query}", self._certification_web_search(query, use_domain = False)))
+                # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
+            all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
+            print_timing_table(all_task_results)
+
+            # Flatten and collect results, tagging with source query
+            all_results = {}
+            for idx, task_result in enumerate(all_task_results):
+                if isinstance(task_result, dict) and task_result.get("status") == "success":
+                    all_results["answer_{0}".format(idx)] = task_result["result"]
+            # TODO: delete the following, or figure out good ways to store
+            # for idx, task_result in enumerate(all_task_results):
+            #     if isinstance(task_result, dict) and task_result.get("status") == "success":
+            #         # Each result is a list of dicts (certifications)
+            #         # Figure out which query this result came from
+            #         query_index = idx // 3
+            #         source_query = search_queries[query_index] if query_index < len(search_queries) else None
+            #         for item in task_result.get("result", []):
+            #             # Attach the originating query for traceability
+            #             if isinstance(item, dict):
+            #                 item['source_query'] = source_query
+            #             all_results.append(item)
+            #     else:
+            #         print(f"❌ Task {idx} failed or returned no results.")
+
+            # print(f"✅ Combined {len(all_results)} total certification results from all sources/queries")
+            # Optionally store results, etc.
+            # await self._store_certification_result(str(all_results), search_queries, db)
+
+            print("📤 Returning raw certification results for LLM deduplication and structuring...")
+            return all_results
         except Exception as e:
-            print(f"❌ Search failed for {website}: {e}")
-            return None
+            print(f"❌ Error in search_relevant_certification: {e}")
+
     
-    async def _synthesize_results(self, search_results: list, original_query: str):
-        """Synthesize all search results into final response"""
-        return synthesize_results(search_results)
-    
-    async def _synthesize_certification_results(self, certification_results: list, original_query: str):
-        """Synthesize certification results into a structured final response"""
-        return synthesize_results(certification_results)
     
     async def _stream_openai_response(self, raw_results: list, original_query: str, session_id: str, db: AsyncSession, message_id: str):
         """
@@ -517,196 +468,9 @@ Raw Results ({len(meaningful_results)} items):
             print(f"🔍 Full traceback: {traceback.format_exc()}")
             raise
 
-    def _clean_and_parse_json_response(self, response: str):
-        """Clean and parse JSON response from OpenAI"""
-        print(f"🧹 Cleaning and parsing response: '{response}'")
-        
-        try:
-            # Clean up the response - remove markdown code blocks if present
-            cleaned_response = response.strip()
-            print(f"📝 Original response length: {len(response)}")
-            
-            if cleaned_response.startswith('```json'):
-                # Remove the opening ```json and closing ```
-                cleaned_response = cleaned_response.replace('```json', '').replace('```', '').strip()
-                print("🧹 Removed markdown code blocks")
-            elif cleaned_response.startswith('```'):
-                # Remove any markdown code blocks
-                cleaned_response = cleaned_response.replace('```', '').strip()
-                print("🧹 Removed markdown code blocks")
-            
-            print(f"📝 Cleaned response: '{cleaned_response}'")
-            print(f"📝 Cleaned response length: {len(cleaned_response)}")
-            
-            if not cleaned_response or cleaned_response == "[]":
-                print("⚠️ Empty or invalid response, returning empty list")
-                return []
-            
-            # Try to parse JSON
-            import json
-            parsed_json = json.loads(cleaned_response)
-            print(f"✅ JSON parsed successfully: {type(parsed_json)}")
-            
-            if isinstance(parsed_json, list):
-                print(f"✅ Parsed {len(parsed_json)} objects from JSON array")
-                return parsed_json
-            elif isinstance(parsed_json, dict):
-                print("✅ Parsed single object, converting to list")
-                return [parsed_json]
-            else:
-                print(f"⚠️ Unexpected JSON type: {type(parsed_json)}")
-                return []
-                
-        except json.JSONDecodeError as e:
-            print(f"❌ JSON parsing failed: {e}")
-            print(f"🔍 Raw response: '{response}'")
-            return []
-        except Exception as e:
-            print(f"❌ Unexpected error in JSON parsing: {e}")
-            return []
+ 
     
-    def _format_raw_results_for_openai(self, raw_results: list) -> str:
-        """Format raw results into a structured text for OpenAI processing"""
-        print(f"🔄 Formatting {len(raw_results)} raw results for OpenAI...")
-        
-        if not raw_results:
-            print("⚠️ No raw results to format")
-            return "No results found."
-        
-        formatted_results = []
-        for i, result in enumerate(raw_results):
-            print(f"📝 Processing result {i+1}/{len(raw_results)}: {type(result)}")
-            if isinstance(result, dict):
-                # Handle certification results
-                if 'certificate_name' in result:
-                    formatted_results.append(f"{i+1}. Title: {result.get('certificate_name', 'Unknown')}")
-                    formatted_results.append(f"   Description: {result.get('certificate_description', 'No description')}")
-                    formatted_results.append(f"   Regulation: {result.get('legal_regulation', 'Unknown')}")
-                    formatted_results.append(f"   Required: {result.get('is_required', False)}")
-                    formatted_results.append("")
-                # Handle other result types
-                else:
-                    formatted_results.append(f"{i+1}. {str(result)}")
-                    formatted_results.append("")
-            else:
-                formatted_results.append(f"{i+1}. {str(result)}")
-                formatted_results.append("")
-        
-        result_text = "\n".join(formatted_results)
-        print(f"✅ Formatted {len(raw_results)} results into {len(result_text)} characters")
-        return result_text
-    
-    def _create_fallback_response(self, raw_results: list, original_query: str) -> str:
-        """Create a fallback response when OpenAI streaming fails"""
-        print(f"🔄 Creating fallback response for {len(raw_results)} results...")
-        
-        response_parts = [f"Based on the search results for: {original_query}\n\n"]
-        
-        # Deduplicate results by creating a set of unique items
-        seen_items = set()
-        unique_results = []
-        
-        for result in raw_results:
-            if isinstance(result, dict):
-                # Create a unique key for deduplication
-                if 'certificate_name' in result:
-                    key = result.get('certificate_name', '').lower().strip()
-                elif 'title' in result:
-                    key = result.get('title', '').lower().strip()
-                else:
-                    key = str(result).lower().strip()
-                
-                if key and key not in seen_items:
-                    seen_items.add(key)
-                    unique_results.append(result)
-        
-        print(f"✅ Deduplicated to {len(unique_results)} unique results")
-        
-        # Format the unique results
-        for i, result in enumerate(unique_results, 1):
-            if isinstance(result, dict):
-                if 'certificate_name' in result:
-                    cert_name = result.get('certificate_name', 'Unknown Certificate')
-                    cert_desc = result.get('certificate_description', 'No description available')
-                    is_required = result.get('is_required', False)
-                    requirement = "REQUIRED" if is_required else "OPTIONAL"
-                    
-                    response_parts.append(f"{i}. **{cert_name}** ({requirement})")
-                    response_parts.append(f"   {cert_desc}")
-                    response_parts.append("")
-                
-                elif 'title' in result:
-                    title = result.get('title', 'No title')
-                    content = result.get('content', 'No content')
-                    
-                    response_parts.append(f"{i}. **{title}**")
-                    response_parts.append(f"   {content}")
-                    response_parts.append("")
-        
-        return "\n".join(response_parts) 
-    
-    async def _lookup_past_certifications(self, query: str, db: AsyncSession):
-        """Search internal DB for past certifications"""
-        try:
-            # TODO: Implement actual DB lookup
-            # For now, return empty list
-            print(f"    🔍 Internal DB lookup for: {query}")
-            return []
-        except Exception as e:
-            print(f"❌ Internal DB lookup failed: {e}")
-            return []
-    
-    async def _generate_certification_queries(self, enhanced_query: str):
-        """Generate multiple focused queries for certification search"""
-        result = generate_search_queries(enhanced_query)
-        if result.get("reasoning"):
-            print(f"🧠 Query generation reasoning: {result['reasoning']}")
-        queries = result.get("queries", [])
-        print(f"✅ Generated {len(queries)} queries: {queries}")
-        return queries
-    
-    async def _parallel_certification_search(self, search_queries: list[str]):
-        """Perform parallel web search for certification queries"""
-        import asyncio
-        
-        search_tasks = []
-        for query in search_queries:
-            # Search multiple domains for each query
-            domains = ["fda.gov", "usda.gov", "iso.org", "astm.org"]
-            for domain in domains:
-                task = self._search_single_domain(query, domain)
-                search_tasks.append(task)
-        
-        results = await asyncio.gather(*search_tasks, return_exceptions=True)
-        return [r for r in results if not isinstance(r, Exception)]
-    
-    async def _search_single_domain(self, query: str, domain: str):
-        """Search a single domain for a query"""
-        try:
-            result = perplexity_domain_search(query, domain)
-            return {
-                "query": query,
-                "domain": domain,
-                "result": result
-            }
-        except Exception as e:
-            print(f"❌ Search failed for {domain}: {e}")
-            return None
-    
-    async def _combine_and_deduplicate_results(self, results: list):
-        """Combine and deduplicate results using fuzzy matching"""
-        # TODO: Implement fuzzy deduplication
-        # This would use fuzzy string matching to remove duplicates
-        all_results = []
-        seen_results = set()
-        for query_results in results:
-            for source_results in [query_results['rag_domain_results'], query_results['general_results'], query_results['db_results']]:
-                for result in source_results:
-                    if result and result['result'] not in seen_results:
-                        all_results.append(result)
-                        seen_results.add(result['result'])
-        return all_results
-  
+
 
     async def _store_certification_result(self, results: str, query: str, db: AsyncSession):
         """Store certification result and metadata"""
@@ -714,79 +478,20 @@ Raw Results ({len(meaningful_results)} items):
         # This would store the final result with metadata
         pass 
 
-    async def _rag_domain_search(self, query: str):
+    async def _certification_web_search(self, query: str, use_domain: bool = False):
         """RAG API + Domain Search: Get domain metadata and search with domain filter"""
+        from src.agent_system.internal import _domain_search_kb, _perplexity_certification_search
         try:
-            # Step 1: Get domain metadata from RAG API
-            rag_result = await self._call_rag_api(query)
-            
-            # Step 2: Extract domains from metadata
-            domains = []
-            if isinstance(rag_result, list):
-                for item in rag_result:
-                    if isinstance(item, dict):
-                        # Handle different possible domain metadata formats
-                        if "domain" in item:
-                            domains.append(item["domain"])
-                        elif "url" in item:
-                            # Extract domain from URL
-                            import re
-                            url = item["url"]
-                            domain_match = re.search(r'https?://(?:www\.)?([^/]+)', url)
-                            if domain_match:
-                                domains.append(domain_match.group(1))
-                        elif "website" in item:
-                            domains.append(item["website"])
-            
-            # Step 3: Search all domains with Perplexity in a single call
-            domain_results = []
-            if domains:
-                print(f"    🔍 Searching {len(domains)} domains in single call: {domains}")
-                try:
-                    result = await self._search_single_domain_with_prompt(query, domains, "domain")
-                    if result:
-                        domain_results.extend(result)
-                except Exception as e:
-                    print(f"    ❌ Multi-domain search failed: {e}")
+            if use_domain:
+                domains = await _domain_search_kb(query)
             else:
-                print(f"    ⚠️ No domains found in RAG result, using fallback domains")
-                # Fallback domains for testing
-                fallback_domains = ["fda.gov", "usda.gov", "iso.org"]
-                try:
-                    result = await self._search_single_domain_with_prompt(query, fallback_domains, "domain")
-                    if result:
-                        domain_results.extend(result)
-                except Exception as e:
-                    print(f"    ❌ Fallback multi-domain search failed: {e}")
-            
-            return domain_results
+                domains = None
+
+            result = await _perplexity_certification_search(query, domains)
+            return result
             
         except Exception as e:
-            print(f"❌ RAG domain search failed: {e}")
-            return []
+            print(f"❌ domain web search failed: {e}")
+            return {}
     
-    async def _general_web_search(self, query: str):
-        """General Web Search: Search without domain filter"""
-        try:
-            result = await self._search_single_domain_with_prompt(query, "", "general")
-            return result if result else []
-        except Exception as e:
-            print(f"❌ General web search failed: {e}")
-            # Return mock data for testing
-            return [{"certificate_name": "Mock Certificate", "certificate_description": "Test data", "is_required": True}]
-    
-    async def _search_single_domain_with_prompt(self, query: str, domains: list, search_type: str):
-        """Search with specific prompt based on search type"""
-        from src.agent_system.internal import _perplexity_domain_search_impl
-        # The prompt is now handled inside _perplexity_domain_search_impl
-        try:
-            # Call Perplexity with domain list
-            result = await _perplexity_domain_search_impl(query, domains)
-            print(f"    🔍 Perplexity result type: {type(result)}")
-            print(f"    🔍 Perplexity result length: {len(result) if isinstance(result, list) else 'N/A'}")
-            return result if result else []
-        except Exception as e:
-            print(f"    ❌ {search_type} search failed: {e}")
-            return []
-        
        

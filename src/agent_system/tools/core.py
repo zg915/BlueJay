@@ -62,13 +62,16 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
             "Orchestrator not set. Call set_certification_workflow_orchestrator first."
         )
 
-    db = getattr(global_orchestrator, "db", None)
-    return await global_orchestrator.search_relevant_certification(search_queries, db)
+    # db = getattr(global_orchestrator, "db", None)
+    return await global_orchestrator.search_relevant_certification(search_queries)
 
 @function_tool
 async def Web_Search(search_queries: list[str]):
-
-    return []
+    if global_orchestrator is None:
+        raise RuntimeError(
+            "Orchestrator not set. Call set_certification_workflow_orchestrator first."
+        )
+    return await global_orchestrator.Web_Search(search_queries)
 
 @function_tool
 async def handle_general_research_workflow(enhanced_query: str, context_json: Optional[str] = None):
@@ -82,32 +85,21 @@ async def handle_general_research_workflow(enhanced_query: str, context_json: Op
     db = getattr(global_orchestrator, 'db', None)
     return await global_orchestrator.handle_general_research_workflow(enhanced_query, context, db)
 
-@function_tool
-def get_recent_context(session_id: str):
-    """
-    Tool stub for agent use. Does not fetch from DB directly.
-    """
-    return {}
 
 @function_tool
 def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
     from src.agent_system.internal import _call_rag_api_impl
     return _call_rag_api_impl(text, dataset_id, limit, similarity, search_mode, using_re_rank)
 
-@function_tool
-def generate_search_queries(enhanced_query: str, num_queries: int = 4):
-    from . import _generate_search_queries_impl
-    return _generate_search_queries_impl(enhanced_query, num_queries)
+# @function_tool
+# def generate_search_queries(enhanced_query: str, num_queries: int = 4):
+#     from . import _generate_search_queries_impl
+#     return _generate_search_queries_impl(enhanced_query, num_queries)
 
-@function_tool
-def map_queries_to_websites(queries: list[str], domain_metadata: str):
-    from . import _map_queries_to_websites_impl
-    return _map_queries_to_websites_impl(queries, domain_metadata)
-
-@function_tool
-def perplexity_domain_search(query: str, domains: list = None):
-    from src.agent_system.internal import _perplexity_domain_search_impl
-    return _perplexity_domain_search_impl(query, domains)
+# @function_tool
+# def map_queries_to_websites(queries: list[str], domain_metadata: str):
+#     from . import _map_queries_to_websites_impl
+#     return _map_queries_to_websites_impl(queries, domain_metadata)
 
 @function_tool
 def create_parallel_queries(queries: list[str]):
