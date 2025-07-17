@@ -138,9 +138,5 @@ async def store_context_db(db, session_id: str):
     return await memory_store_context(db, session_id)
 
 async def _domain_search_kb(query: str):
-    """
-    Input: one single query
-    Output: a list of matched domains
-    """
     return await domain_search_kb(query)
 
