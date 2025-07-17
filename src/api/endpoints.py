@@ -51,19 +51,29 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
     print(f"💬 Session: {request.session_id}")
     print(f"📝 Content: {request.content}")
     try:
-        # Run the full workflow (triage agent + handoff)
-        result = await orchestrator.handle_user_question(
-            request.session_id,
-            request.content,
-            db
-        )
-        # For streaming, just yield the result as a single event (or break into chunks if needed)
-        def generate():
-            yield f"data: {json.dumps({'status': 'complete', 'response': result})}\n\n"
+        # Helper to make results JSON serializable
+        def to_serializable(obj):
+            if isinstance(obj, BaseModel):
+                return obj.model_dump()
+            elif isinstance(obj, list):
+                return [to_serializable(item) for item in obj]
+            elif isinstance(obj, dict):
+                return {k: to_serializable(v) for k, v in obj.items()}
+            return obj
+
+        # Streaming generator
+        async def event_stream():
+            async for result in orchestrator.handle_user_question(
+                request.session_id,
+                request.content,
+                db
+            ):
+                yield f"data: {json.dumps({'status': 'stream', 'response': to_serializable(result)}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'status': 'end'})}\n\n"
+
         return StreamingResponse(
-            generate(),
-            media_type="text/plain",
+            event_stream(),
+            media_type="text/event-stream",
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"}
         )
     except Exception as e:
