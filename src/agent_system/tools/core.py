@@ -66,6 +66,11 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
     return await global_orchestrator.search_relevant_certification(search_queries, db)
 
 @function_tool
+async def Web_Search(search_queries: list[str]):
+
+    return []
+
+@function_tool
 async def handle_general_research_workflow(enhanced_query: str, context_json: Optional[str] = None):
     """
     Specialized workflow for general research requests.
