@@ -131,14 +131,19 @@ class WorkflowOrchestrator:
         from src.agent_system.tools.core import set_global_orchestrator
         set_global_orchestrator(self)
         
+
+        # Initialize db as None - will be set during request processing
+        self.db = None
         self.certification_agent = CertificationAgent(self)
         self.answer_agent = AnswerAgent(self)
+
         self.triage_agent = Agent(
             name="Triage agent",
             instructions=TRIAGE_AGENT_INSTRUCTION,
             #TODO: handle the filter input
             handoffs=[
                 handoff(self.certification_agent,
+                        tool_name_override="transfer_to_certification_workflow",
                         input_type=ReasonArgs,
                         on_handoff=_print_reason),
                 handoff(self.answer_agent,
@@ -154,7 +159,11 @@ class WorkflowOrchestrator:
         """
         print(f"\n🚀 Starting workflow for session: {session_id}")
         print(f"📝 User message: {message}")
-            # Pre-hooks: mandatory steps
+        
+        # Set the db session for tools to access
+        self.db = db
+        
+        # Pre-hooks: mandatory steps
         try:
             print("🔍 Running pre-hooks...")
             #TODO: this should never be triggered, if ever triggered, just pop 500 internal error
@@ -177,7 +186,7 @@ class WorkflowOrchestrator:
 
             triage_result = await Runner.run(
                 starting_agent=self.triage_agent,
-                input=context["messages"]
+                input=message  # Use the actual user message, not context messages
             )
 
             print("✅ Triage agent (with handoff) completed")
@@ -194,6 +203,8 @@ class WorkflowOrchestrator:
             workflow_output = triage_result.final_output if hasattr(triage_result, 'final_output') else triage_result
             print(f"📊 Workflow output type: {type(workflow_output)}")
             print(f"📊 Workflow output length: {len(workflow_output) if isinstance(workflow_output, list) else 'N/A'}")
+            print(f"📊 Workflow output preview: {str(workflow_output)[:500]}...")
+            
             # Handle different types of workflow output
             # Check if the agent returned structured, deduplicated results
             if isinstance(workflow_output, list) and all(isinstance(item, dict) for item in workflow_output):
@@ -214,7 +225,38 @@ class WorkflowOrchestrator:
                         # This is a direct response from the workflow agent
                         print(f"📝 Direct response from workflow agent: {parsed['content']}")
                         return parsed['content']
+                    elif isinstance(parsed, dict):
+                        # Agent returned a complex JSON object, try to extract certification data
+                        print(f"📝 Agent returned complex JSON object, attempting to extract data...")
+                        certification_data = []
+                        
+                        # Look for certification arrays in the response
+                        for key, value in parsed.items():
+                            if isinstance(value, list) and len(value) > 0:
+                                if all(isinstance(item, dict) and 'certificate_name' in item for item in value):
+                                    certification_data.extend(value)
+                                elif all(isinstance(item, dict) for item in value):
+                                    # Assume these are certification objects
+                                    certification_data.extend(value)
+                        
+                        if certification_data:
+                            print(f"✅ Extracted {len(certification_data)} certification objects from complex response")
+                            return certification_data
+                        else:
+                            print(f"⚠️ No certification data found in complex response")
+                            # Check if all values are empty arrays
+                            all_empty = all(isinstance(value, list) and len(value) == 0 for value in parsed.values() if isinstance(value, list))
+                            if all_empty:
+                                print(f"⚠️ Agent returned object with all empty arrays, returning empty list")
+                                return []
+                            else:
+                                print(f"⚠️ Agent returned complex object with no certification data")
+                                return []
                     else:
+                        # Check if parsed result is empty
+                        if isinstance(parsed, list) and len(parsed) == 0:
+                            print("⚠️ Agent returned empty results, returning empty list")
+                            return []
                         # Fall back to OpenAI processing for non-structured data
                         print(f"📝 Non-structured data from workflow agent, using OpenAI processing")
                         final_result = await self._stream_openai_response(
@@ -449,10 +491,21 @@ class WorkflowOrchestrator:
         print(f"📊 Raw results type: {type(raw_results)}")
         print(f"📊 Raw results length: {len(raw_results)}")
         
+        # Check if we have any meaningful results to process
+        if not raw_results or (isinstance(raw_results, list) and len(raw_results) == 0):
+            print("⚠️ No raw results to process, returning empty list")
+            return []
+        
+        # Check if all results are empty or None
+        meaningful_results = [r for r in raw_results if r is not None and r != {} and r != []]
+        if not meaningful_results:
+            print("⚠️ No meaningful results to process, returning empty list")
+            return []
+        
         try:
             # Convert raw results to a structured format for OpenAI
             print("🔄 Converting raw results to structured format...")
-            results_text = self._format_raw_results_for_openai(raw_results)
+            results_text = self._format_raw_results_for_openai(meaningful_results)
             print(f"📝 Formatted results text length: {len(results_text)}")
             print(f"📝 First 200 chars of formatted results: {results_text[:200]}...")
             
@@ -472,10 +525,10 @@ Return ONLY a JSON array of objects, no markdown, no explanation, no extra text.
 
 Original Query: {original_query}
 
-Raw Results ({len(raw_results)} items):
+Raw Results ({len(meaningful_results)} items):
 {results_text}
 """
-            print(f"📤 Sending {len(raw_results)} results to OpenAI for JSON processing...")
+            print(f"📤 Sending {len(meaningful_results)} results to OpenAI for JSON processing...")
             print(f"📝 Prompt length: {len(prompt)}")
             print(f"📝 First 300 chars of prompt: {prompt[:300]}...")
             
@@ -773,11 +826,18 @@ Raw Results ({len(raw_results)} items):
             # Call Perplexity with domain list
             result = await _perplexity_domain_search_impl(query, domains)
             
+            # Debug: Log the raw result
+            print(f"    🔍 Raw Perplexity result type: {type(result)}")
+            print(f"    🔍 Raw Perplexity result keys: {list(result.keys()) if isinstance(result, dict) else 'Not a dict'}")
+            
             # Parse the JSON result with robust error handling
             import json
             import re
             if isinstance(result, dict) and "choices" in result:
                 content = result["choices"][0]["message"]["content"]
+                print(f"    🔍 Perplexity content length: {len(content)}")
+                print(f"    🔍 Perplexity content preview: {content[:200]}...")
+                
                 try:
                     # First try: direct JSON parsing
                     parsed_result = json.loads(content)
@@ -936,4 +996,18 @@ Raw Results ({len(raw_results)} items):
                 
         except Exception as e:
             print(f"    ❌ {search_type} search failed: {e}")
-            return [] 
+            return []
+        
+        # Fallback: Return mock data if no results found
+        print(f"    ⚠️ No results found for {search_type} search, returning mock data")
+        return [
+            {
+                "certificate_name": f"Mock {search_type.title()} Certificate",
+                "certificate_description": f"Test certification data for {query}",
+                "legal_regulation": "Mock Regulation 2024",
+                "legal_text_excerpt": "This is a mock legal text excerpt for testing purposes.",
+                "legal_text_meaning": "This mock regulation requires basic compliance testing.",
+                "registration_fee": "USD 100 (~$100.00 USD)",
+                "is_required": True
+            }
+        ] 

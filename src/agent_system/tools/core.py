@@ -91,12 +91,12 @@ def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarit
 
 @function_tool
 def generate_search_queries(enhanced_query: str, num_queries: int = 4):
-    from . import _generate_search_queries_impl
+    from src.agent_system.internal import generate_search_queries as _generate_search_queries_impl
     return _generate_search_queries_impl(enhanced_query, num_queries)
 
 @function_tool
 def map_queries_to_websites(queries: list[str], domain_metadata: str):
-    from . import _map_queries_to_websites_impl
+    from src.agent_system.internal import map_queries_to_websites as _map_queries_to_websites_impl
     return _map_queries_to_websites_impl(queries, domain_metadata)
 
 @function_tool
