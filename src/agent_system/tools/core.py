@@ -1,7 +1,8 @@
 from agents import function_tool
-from typing import Optional
+from typing import Optional, List
 import json
-import ast
+from agents import RunContextWrapper
+from typing import Any
 
 # Global orchestrator placeholder (set this from your app entrypoint)
 global_orchestrator = None
@@ -41,20 +42,28 @@ def safe_parse_context(context_json):
                 return json.loads(fixed)
             except Exception:
                 raise ValueError("Context is not valid JSON or Python dict string")
+            
+@function_tool(name_override="search_relevant_certification")
+async def search_relevant_certification(search_queries: List[str]) -> Any:
+    """Return a comprehensive raw list of certifications for four complementary queries.
 
-@function_tool
-async def handle_certification_list_workflow(enhanced_query: str, context_json: Optional[str] = None):
-    #TODO: alt2er the tool description
+    Args:
+        search_queries: **Exactly four** English search strings used to search the internet and databases
+
+    Returns:
+        A JSON‑serialisable object containing the combined search results that
+        will later be deduplicated and filtered by the calling agent.
     """
-    Specialized workflow for certification list requests.
-    Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.
-    """
-    print(f"📋 Starting certification list workflow for: {enhanced_query}")
-    context = safe_parse_context(context_json)
+
+    print(f"📋 Starting certification list workflow for queries: {search_queries!r}")
+
     if global_orchestrator is None:
-        raise RuntimeError("Orchestrator not set. Call set_certification_workflow_orchestrator first.")
-    db = getattr(global_orchestrator, 'db', None)
-    return await global_orchestrator.handle_certification_list_workflow(enhanced_query, context, db)
+        raise RuntimeError(
+            "Orchestrator not set. Call set_certification_workflow_orchestrator first."
+        )
+
+    db = getattr(global_orchestrator, "db", None)
+    return await global_orchestrator.search_relevant_certification(search_queries, db)
 
 @function_tool
 async def handle_general_research_workflow(enhanced_query: str, context_json: Optional[str] = None):
@@ -107,4 +116,4 @@ async def run_parallel_queries(query_funcs: list[str]):
 
 @function_tool
 def synthesize_results(results: list[str]):
-    return "\n".join(str(r) for r in results) 
+    return "\n".join(str(r) for r in results)

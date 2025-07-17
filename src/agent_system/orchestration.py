@@ -7,8 +7,8 @@ import time
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Agent, handoff
-from .agents import CertificationWorkflowAgent, ResearchWorkflowAgent
-from src.config.prompts import TRIAGE_AGENT_PROMPT
+from .agents import CertificationAgent, AnswerAgent
+from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
 from src.agent_system.internal import (
     store_message_db, store_final_response_db, store_research_request_db,
@@ -24,9 +24,7 @@ import asyncio
 #TODO: move it somewhere else?
 from pydantic import BaseModel, Field
 class ReasonArgs(BaseModel):
-    """
-    Arguments required by the CertificationWorkflowAgent.
-    """
+
     reason: str = Field(
         ...,
         description=(
@@ -133,22 +131,24 @@ class WorkflowOrchestrator:
         from src.agent_system.tools.core import set_global_orchestrator
         set_global_orchestrator(self)
         
+
         # Initialize db as None - will be set during request processing
         self.db = None
-        
-        self.certification_agent = CertificationWorkflowAgent(self)
-        self.research_agent = ResearchWorkflowAgent(self)
+        self.certification_agent = CertificationAgent(self)
+        self.answer_agent = AnswerAgent(self)
+
         self.triage_agent = Agent(
             name="Triage agent",
-            instructions=TRIAGE_AGENT_PROMPT,
+            instructions=TRIAGE_AGENT_INSTRUCTION,
             #TODO: handle the filter input
             handoffs=[
                 handoff(self.certification_agent,
                         tool_name_override="transfer_to_certification_workflow",
                         input_type=ReasonArgs,
                         on_handoff=_print_reason),
-                handoff(self.research_agent,
-                        tool_name_override="transfer_to_research_workflow")
+                handoff(self.answer_agent,
+                        input_type=ReasonArgs,
+                        on_handoff=_print_reason)
             ]
         )
         print("✅ WorkflowOrchestrator initialized successfully")
@@ -356,19 +356,19 @@ class WorkflowOrchestrator:
         print("📤 Returning raw results for OpenAI processing...")
         return all_results
     
-    async def handle_certification_list_workflow(self, enhanced_query: str, context: dict, db: AsyncSession):
+    async def search_relevant_certification(self, search_queries: list[str], db: AsyncSession):
         """
         Specialized workflow for certification list requests.
-        Includes internal DB lookup, web search, fuzzy deduplication, and vector caching.
         """
-        print(f"📋 Starting certification list workflow for: {enhanced_query}")
+        print(f"📋 Starting certification list workflow for: {search_queries}")
         
         # Execute all three search types in parallel with timing
         log_with_time("🚀 Starting parallel certification search operations...")
         all_results = await asyncio.gather(
-            timed_task("RAG-Domain", self._rag_domain_search(enhanced_query)),
-            timed_task("General-Web", self._general_web_search(enhanced_query)),
-            timed_task("Internal-DB", self._lookup_past_certifications(enhanced_query, db)),
+            #TODO: enable all three with multiple queries (parallel)
+            timed_task("RAG-Domain", self._rag_domain_search(search_queries)),
+            timed_task("General-Web", self._general_web_search(search_queries)),
+            timed_task("Internal-DB", self._lookup_past_certifications(search_queries, db)),
             return_exceptions=True
         )
         

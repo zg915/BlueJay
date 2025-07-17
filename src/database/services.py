@@ -7,6 +7,8 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
+from sqlalchemy import func, update
+import datetime
 from sqlalchemy.exc import NoResultFound, IntegrityError
 from .models import ChatSession, ChatMessage, ResearchRequest, ConversationMemory
 import datetime
@@ -88,9 +90,52 @@ async def get_chat_session(session: AsyncSession, session_id: str):
     return chat_session
 
 # --- Chat Messages ---
-async def add_chat_message(session: AsyncSession, session_id: str, content: str, role: str = "user", reply_to: str = None):
-    msg = ChatMessage(session_id=session_id, role=role, content=content, reply_to=reply_to)
+async def add_chat_message(
+    session: AsyncSession,
+    session_id: str,
+    content: str,
+    role: str = "user",
+    reply_to: str | None = None,
+    type: str = "text",
+):
+    """
+    Add a chat message, mirroring the logic used in the newer DatabaseService.store_message
+    but keeping the ORM‑centric style already used in this module.
+    """
+    # 1) Determine next message_order if not provided
+    next_rs = await session.execute(
+        select(func.coalesce(func.max(ChatMessage.message_order), 0) + 1)
+        .where(ChatMessage.session_id == session_id)
+    )
+    message_order = next_rs.scalar_one()
+
+    # 2) Construct a unique message_id
+    timestamp_str = datetime.datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    message_id = f"msg_{timestamp_str}_{session_id}"
+
+    # 3) Create and persist the ChatMessage ORM object
+    msg = ChatMessage(
+        message_id=message_id,
+        session_id=session_id,
+        role=role,
+        content=content,
+        message_order=message_order,
+        reply_to=reply_to,
+        type=type,
+    )
     session.add(msg)
+
+    # 4) Update the parent ChatSession counters
+    await session.execute(
+        update(ChatSession)
+        .where(ChatSession.session_id == session_id)
+        .values(
+            message_count=ChatSession.message_count + 1,
+            updated_at=datetime.datetime.utcnow(),
+        )
+    )
+
+    # 5) Commit and refresh
     await session.commit()
     await session.refresh(msg)
     return msg

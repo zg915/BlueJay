@@ -1,12 +1,12 @@
 """
-ResearchWorkflowAgent definition
+AnswerAgent definition
 """
 from .base import Agent
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import ModelSettings
 from src.agent_system.tools.core import handle_general_research_workflow
 
-class ResearchWorkflowAgent(Agent):
+class AnswerAgent(Agent):
     def __init__(self, orchestrator):
         super().__init__(
             name="Research workflow agent",
@@ -31,7 +31,7 @@ class ResearchWorkflowAgent(Agent):
     # The run method is not needed in tool-only mode
     # async def run(self, enhanced_query: str, context: dict = None, db: AsyncSession = None):
     #     """Execute research workflow and return results"""
-    #     print(f"🔧 ResearchWorkflowAgent.run() called with query: {enhanced_query}")
+    #     print(f"🔧 AnswerAgent.run() called with query: {enhanced_query}")
     #     print(f"🔧 Context: {context}")
     #     print(f"🔧 DB: {db}")
     #     try:
@@ -45,10 +45,10 @@ class ResearchWorkflowAgent(Agent):
     #             print("⚠️ No database session provided, using mock context")
     #             context = context or {}
     #         result = await self.orchestrator.handle_general_research_workflow(enhanced_query, context, db)
-    #         print(f"✅ ResearchWorkflowAgent returning: {len(result) if isinstance(result, list) else 'non-list'} results")
+    #         print(f"✅ AnswerAgent returning: {len(result) if isinstance(result, list) else 'non-list'} results")
     #         return result
     #     except Exception as e:
-    #         print(f"❌ ResearchWorkflowAgent error: {e}")
+    #         print(f"❌ AnswerAgent error: {e}")
     #         import traceback
     #         print(f"🔍 Full traceback: {traceback.format_exc()}")
     #         return f"Error in research workflow: {str(e)}" 
