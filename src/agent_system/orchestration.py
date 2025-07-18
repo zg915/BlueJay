@@ -207,7 +207,7 @@ class WorkflowOrchestrator:
             self._cert_array_stripped = False
             buffering_cert = False
 
-            summary_memory = context["summary"]
+            # summary_memory = context["summary"]
 
             # Use true agent streaming
             result = Runner.run_streamed(
@@ -222,16 +222,16 @@ class WorkflowOrchestrator:
                     print(f"🛑 Workflow cancelled by frontend.")
                     yield {"status": "cancelled", "message": "Workflow was cancelled by user."}
                     break
-                output = None
-                if event.type == "run_item_stream_event":
-                    item = event.item
-                    # Message output
-                    if getattr(item, 'type', None) == "message_output_item":
-                        from agents import ItemHelpers
-                        output = ItemHelpers.text_message_output(item)
-                    # Tool output
-                    elif getattr(item, 'type', None) == "tool_call_output_item":
-                        output = getattr(item, 'output', None)
+                # output = None
+                # if event.type == "run_item_stream_event":
+                #     item = event.item
+                #     # Message output
+                #     if getattr(item, 'type', None) == "message_output_item":
+                #         from agents import ItemHelpers
+                #         output = ItemHelpers.text_message_output(item)
+                #     # Tool output
+                #     elif getattr(item, 'type', None) == "tool_call_output_item":
+                #         output = getattr(item, 'output', None)
 
                 # 1) Agent handoff
                 if event.type == "agent_updated_stream_event":
@@ -264,7 +264,7 @@ class WorkflowOrchestrator:
                     continue
             if not buffering_cert:
                 assistant_response = "".join(assistant_response) 
-            assistant_message_obj = await store_message_db(session_id, assistant_response, db, "assistant", reply_to=user_message_id)
+            assistant_message_obj = await store_message_db(session_id, str(assistant_response), db, "assistant", reply_to=user_message_id)
             yield {"type": "completed", "response": assistant_message_obj}
             return
 
