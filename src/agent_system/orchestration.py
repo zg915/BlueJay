@@ -174,7 +174,8 @@ class WorkflowOrchestrator:
             # Remove parsed object and leading separators
             self._cert_buffer = self._cert_buffer[consumed:].lstrip(', \n')
 
-    async def handle_user_question(self, session_id: str, message: str, db: AsyncSession):
+    async def handle_user_question(self, session_id: str, message: str, db: AsyncSession, context=None):
+
         """
         Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → true agent streaming
         """
@@ -196,8 +197,8 @@ class WorkflowOrchestrator:
                 yield {"type": "completed", "response": assistant_message_obj}
                 return
             print("✅ Input moderation passed")
-            context = await get_recent_context_db(db, session_id, 3)
-            print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
+            context_data = await get_recent_context_db(db, session_id, 3)
+            print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("\n🎯 Running triage agent with handoffs...")
 
             # Initialize certification streaming state on self
@@ -215,6 +216,22 @@ class WorkflowOrchestrator:
             )
             assistant_response = []
             async for event in result.stream_events():
+          
+                # Check for cancellation
+                if context and context.stop_event.is_set():
+                    print(f"🛑 Workflow cancelled by frontend.")
+                    yield {"status": "cancelled", "message": "Workflow was cancelled by user."}
+                    break
+                output = None
+                if event.type == "run_item_stream_event":
+                    item = event.item
+                    # Message output
+                    if getattr(item, 'type', None) == "message_output_item":
+                        from agents import ItemHelpers
+                        output = ItemHelpers.text_message_output(item)
+                    # Tool output
+                    elif getattr(item, 'type', None) == "tool_call_output_item":
+                        output = getattr(item, 'output', None)
 
                 # 1) Agent handoff
                 if event.type == "agent_updated_stream_event":

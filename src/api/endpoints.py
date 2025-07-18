@@ -15,6 +15,7 @@ import asyncio
 from src.agent_system.orchestration import WorkflowOrchestrator
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.agent_system.session_manager import workflow_sessions
 
 # Pydantic models for request/response
 class ChatRequest(BaseModel):
@@ -47,6 +48,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
     print(f"\n📡 Streaming chat request received")
     print(f"💬 Session: {request.session_id}")
     print(f"📝 Content: {request.content}")
+    context = workflow_sessions.create(request.session_id)
     def to_serializable(obj):
         if isinstance(obj, BaseModel):
             return obj.model_dump()
@@ -57,13 +59,18 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
         return obj
 
     async def event_stream():
-        async for result in orchestrator.handle_user_question(
-            request.session_id,
-            request.content,
-            db
-        ):
-            yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
-        yield f"data: {json.dumps({'status': 'end'})}\n\n"
+      
+        try:
+            async for result in orchestrator.handle_user_question(
+                request.session_id,
+                request.content,
+                db,
+                context=context
+            ):
+                yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+        finally:
+            workflow_sessions.remove(request.session_id)
+            yield f"data: {json.dumps({'status': 'end'})}\n\n"
 
     return StreamingResponse(
         event_stream(),

@@ -1,276 +1,144 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TIC Research Streaming Test</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            background: white;
-            border-radius: 10px;
-            padding: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #333;
-            text-align: center;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: bold;
-        }
-        input[type="text"], textarea {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        textarea {
-            height: 100px;
-            resize: vertical;
-        }
-        button {
-            background-color: #007bff;
-            color: white;
-            padding: 10px 20px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #0056b3;
-        }
-        button:disabled {
-            background-color: #ccc;
-            cursor: not-allowed;
-        }
-        .output {
-            margin-top: 20px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            border: 1px solid #dee2e6;
-            min-height: 200px;
-            white-space: pre-wrap;
-            font-family: monospace;
-            overflow-y: auto;
-            max-height: 500px;
-        }
-        .status {
-            color: #007bff;
-            font-weight: bold;
-        }
-        .error {
-            color: #dc3545;
-            font-weight: bold;
-        }
-        .success {
-            color: #28a745;
-            font-weight: bold;
-        }
-                 .summary {
-             background-color: #e7f3ff;
-             padding: 10px;
-             border-left: 4px solid #007bff;
-             margin: 10px 0;
-         }
-         .queries {
-             background-color: #f8f9fa;
-             padding: 10px;
-             border-left: 4px solid #28a745;
-             margin: 10px 0;
-             font-family: monospace;
-         }
-         .search-progress {
-             background-color: #fff3cd;
-             padding: 10px;
-             border-left: 4px solid #ffc107;
-             margin: 10px 0;
-         }
-    </style>
+  <meta charset="UTF-8">
+  <title>Agentic Streaming & Cancellation Test</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 2em; }
+    #output { border: 1px solid #ccc; padding: 1em; height: 300px; overflow-y: auto; background: #f9f9f9; }
+    #status { margin-top: 1em; color: #007700; }
+    button { margin-right: 1em; }
+  </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🔬 TIC Research Streaming Test</h1>
-        
-        <form id="chatForm">
-            <div class="form-group">
-                <label for="sessionId">Session ID:</label>
-                <input type="text" id="sessionId" name="sessionId" value="test_session_stream_001" required>
-            </div>
-            
-            <div class="form-group">
-                <label for="content">Research Question:</label>
-                <textarea id="content" name="content" placeholder="Enter your TIC research question here..." required>What certifications do I need to export lithium batteries from China to the United States?</textarea>
-            </div>
-            
-            <button type="submit" id="submitBtn">🚀 Start Streaming Research</button>
-        </form>
-        
-        <div class="output" id="output"></div>
-    </div>
+  <h2>Agentic Streaming & Cancellation Test</h2>
+  <label>
+    Session ID:
+    <input type="text" id="session_id" value="test-session-1" style="width: 200px;">
+  </label>
+  <br><br>
+  <label>
+    Message:
+    <input type="text" id="message" value="List all certifications required to export lip balm from India to USA" style="width: 400px;">
+  </label>
+  <br><br>
+  <button onclick="startStream()">Start Streaming</button>
+  <button onclick="cancelStream()">Cancel</button>
+  <div id="status"></div>
+  <h3>Streamed Output:</h3>
+  <div id="output"></div>
 
-    <script>
-        const form = document.getElementById('chatForm');
-        const output = document.getElementById('output');
-        const submitBtn = document.getElementById('submitBtn');
+  <script>
+    let controller = null;
+    let streaming = false;
 
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            
-            const sessionId = document.getElementById('sessionId').value;
-            const content = document.getElementById('content').value;
-            
-            if (!sessionId || !content) {
-                alert('Please fill in all fields');
-                return;
-            }
+    function appendOutput(text) {
+      const out = document.getElementById('output');
+      out.innerHTML += text + "<br>";
+      out.scrollTop = out.scrollHeight;
+    }
 
-            // Clear output and disable form
-            output.innerHTML = '';
-            submitBtn.disabled = true;
-            submitBtn.textContent = '🔄 Streaming...';
+    function setStatus(text, color="#007700") {
+      const status = document.getElementById('status');
+      status.textContent = text;
+      status.style.color = color;
+    }
 
-            try {
-                // Start streaming request
-                const response = await fetch('http://127.0.0.1:8000/ask/stream', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        session_id: sessionId,
-                        content: content
-                    })
-                });
+    async function startStream() {
+      if (streaming) {
+        setStatus("Already streaming. Please cancel first.", "#bb0000");
+        return;
+      }
+      document.getElementById('output').innerHTML = "";
+      setStatus("Starting stream...");
+      streaming = true;
+      controller = new AbortController();
 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
+      const session_id = document.getElementById('session_id').value;
+      const message = document.getElementById('message').value;
 
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let summary = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const chunk = decoder.decode(value);
-                    const lines = chunk.split('\n');
-
-                    for (const line of lines) {
-                        if (line.startsWith('data: ')) {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                handleStreamEvent(data);
-                            } catch (e) {
-                                console.error('Error parsing JSON:', e, line);
-                            }
-                        }
-                    }
-                }
-
-                addOutput('🎉 Stream completed!', 'success');
-
-            } catch (error) {
-                addOutput(`❌ Error: ${error.message}`, 'error');
-            } finally {
-                submitBtn.disabled = false;
-                submitBtn.textContent = '🚀 Start Streaming Research';
-            }
+      try {
+        const response = await fetch("http://localhost:8000/ask/stream", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id, content: message }),
+          signal: controller.signal
         });
 
-        function handleStreamEvent(data) {
-            switch (data.type) {
-                case 'status':
-                    addOutput(`📋 Status: ${data.message}`, 'status');
-                    break;
-                    
-                case 'user_message':
-                    addOutput(`👤 User Message Stored: ${data.data.message_id}`, 'success');
-                    break;
-                    
-                case 'router_decision':
-                    addOutput(`🤖 Router Decision: ${data.workflow_type}`, 'status');
-                    addOutput(`🔍 Enhanced Query: ${data.enhanced_query}`, 'status');
-                    break;
-                    
-                case 'research_queries':
-                    addQueriesSection(data.queries);
-                    break;
-                    
-                case 'search_progress':
-                    addOutput(`🔬 Search Progress: ${data.message}`, 'status');
-                    break;
-                    
-                case 'summary_chunk':
-                    addSummaryChunk(data.content);
-                    break;
-                    
-                case 'completed':
-                    addOutput(`✅ Completed! Assistant Message: ${data.assistant_message.message_id}`, 'success');
-                    break;
-                    
-                case 'error':
-                    addOutput(`❌ Error: ${data.message}`, 'error');
-                    break;
-                    
-                default:
-                    addOutput(`📨 ${data.type}: ${JSON.stringify(data)}`, 'status');
-            }
+        if (!response.ok) {
+          setStatus("Error: " + response.statusText, "#bb0000");
+          streaming = false;
+          return;
         }
 
-        function addOutput(message, className = '') {
-            const div = document.createElement('div');
-            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
-            if (className) {
-                div.className = className;
-            }
-            output.appendChild(div);
-            output.scrollTop = output.scrollHeight;
-        }
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
 
-        function addSummaryChunk(chunk) {
-            let summaryDiv = document.getElementById('liveSummary');
-            
-            if (!summaryDiv) {
-                summaryDiv = document.createElement('div');
-                summaryDiv.id = 'liveSummary';
-                summaryDiv.className = 'summary';
-                summaryDiv.innerHTML = '<strong>🤖 AI Summary (Live):</strong><br>';
-                output.appendChild(summaryDiv);
-            }
-            
-            summaryDiv.innerHTML += chunk;
-            output.scrollTop = output.scrollHeight;
-        }
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
 
-        function addQueriesSection(queries) {
-            const queriesDiv = document.createElement('div');
-            queriesDiv.className = 'queries';
-            queriesDiv.innerHTML = `<strong>🔍 Generated Research Queries (${queries.length}):</strong><br>`;
-            
-            queries.forEach((query, index) => {
-                queriesDiv.innerHTML += `<span style="color: #007bff;">${index + 1}.</span> ${query}<br>`;
-            });
-            
-            output.appendChild(queriesDiv);
-            output.scrollTop = output.scrollHeight;
+          // Process SSE events
+          let lines = buffer.split("\n\n");
+          buffer = lines.pop(); // last incomplete chunk
+          for (let line of lines) {
+            if (line.startsWith("data: ")) {
+              const data = line.slice(6);
+              try {
+                const obj = JSON.parse(data);
+                if (obj.status === "stream") {
+                  appendOutput(JSON.stringify(obj.response, null, 2));
+                } else if (obj.status === "cancelled") {
+                  setStatus("Stream cancelled by user.", "#bb0000");
+                  streaming = false;
+                  return;
+                } else if (obj.status === "end") {
+                  setStatus("Stream ended.");
+                  streaming = false;
+                  return;
+                }
+              } catch (e) {
+                appendOutput("Malformed event: " + data);
+              }
+            }
+          }
         }
-    </script>
+        setStatus("Stream ended.");
+      } catch (err) {
+        if (err.name === "AbortError") {
+          setStatus("Stream aborted by user.", "#bb0000");
+        } else {
+          setStatus("Stream error: " + err, "#bb0000");
+        }
+      }
+      streaming = false;
+    }
+
+    async function cancelStream() {
+      if (!streaming) {
+        setStatus("No active stream to cancel.", "#bb0000");
+        return;
+      }
+      setStatus("Cancelling...");
+      // Cancel the fetch (disconnects the stream)
+      if (controller) controller.abort();
+
+      // Also call the /stop endpoint to cancel on the backend
+      const session_id = document.getElementById('session_id').value;
+      try {
+        await fetch("http://localhost:8000/stop", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ session_id })
+        });
+        setStatus("Cancellation requested.", "#bb0000");
+      } catch (e) {
+        setStatus("Cancellation request failed.", "#bb0000");
+      }
+      streaming = false;
+    }
+  </script>
 </body>
-</html> 
+</html>
