@@ -62,7 +62,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
             request.content,
             db
         ):
-            yield f"data: {json.dumps({'status': 'stream', 'response': to_serializable(result)}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
         yield f"data: {json.dumps({'status': 'end'})}\n\n"
 
     return StreamingResponse(
@@ -91,7 +91,8 @@ async def chat_simple(request: ChatRequest, db: AsyncSession):
         
         # Convert result to JSON string if it's a list
         if isinstance(result, list):
-            response_text = json.dumps(result, ensure_ascii=False)
+            # response_text = json.dumps(result, ensure_ascii=False)
+            response_text = json.dumps(result)
             print(f"📝 Converting {len(result)} JSON objects to string for API response")
         else:
             response_text = str(result)

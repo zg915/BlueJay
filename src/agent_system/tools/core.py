@@ -66,7 +66,7 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
     return await global_orchestrator.search_relevant_certification(search_queries)
 
 @function_tool
-async def web_search(search_queries: list[str]):
+async def web_search(search_query: str):
     """Perform web search using the provided search queries.
 
     Args:
@@ -79,7 +79,7 @@ async def web_search(search_queries: list[str]):
         raise RuntimeError(
             "Orchestrator not set. Call set_certification_workflow_orchestrator first."
         )
-    return await global_orchestrator.web_search(search_queries)
+    return await global_orchestrator.web_search(search_query)
 
 @function_tool
 async def compliance_research(search_queries: list[str]):
