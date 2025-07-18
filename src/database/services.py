@@ -12,6 +12,7 @@ import datetime
 from sqlalchemy.exc import NoResultFound, IntegrityError
 from .models import ChatSession, ChatMessage, ResearchRequest, ConversationMemory
 import datetime
+from fastapi.encoders import jsonable_encoder
 
 logger = logging.getLogger(__name__)
 
@@ -138,7 +139,7 @@ async def add_chat_message(
     # 5) Commit and refresh
     await session.commit()
     await session.refresh(msg)
-    return msg
+    return jsonable_encoder(msg)
 
 async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 9):
     result = await session.execute(

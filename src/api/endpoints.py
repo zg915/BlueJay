@@ -59,6 +59,7 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
         return obj
 
     async def event_stream():
+      
         try:
             async for result in orchestrator.handle_user_question(
                 request.session_id,
@@ -66,10 +67,10 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
                 db,
                 context=context
             ):
-                yield f"data: {json.dumps({'status': 'stream', 'response': to_serializable(result)}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
         finally:
             workflow_sessions.remove(request.session_id)
-        yield f"data: {json.dumps({'status': 'end'})}\n\n"
+            yield f"data: {json.dumps({'status': 'end'})}\n\n"
 
     return StreamingResponse(
         event_stream(),
@@ -97,7 +98,8 @@ async def chat_simple(request: ChatRequest, db: AsyncSession):
         
         # Convert result to JSON string if it's a list
         if isinstance(result, list):
-            response_text = json.dumps(result, ensure_ascii=False)
+            # response_text = json.dumps(result, ensure_ascii=False)
+            response_text = json.dumps(result)
             print(f"📝 Converting {len(result)} JSON objects to string for API response")
         else:
             response_text = str(result)

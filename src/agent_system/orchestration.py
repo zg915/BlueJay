@@ -6,7 +6,8 @@ import json
 import time
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from agents import Agent, handoff
+from agents import Agent, handoff, ItemHelpers, Runner
+from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionCallArgumentsDeltaEvent
 from .agents import CertificationAgent, AnswerAgent
 from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
 from src.config.output_structure import Reason_Structure
@@ -16,7 +17,6 @@ from src.agent_system.internal import (
     get_recent_context_db, store_context_db
 )
 
-from agents import Runner
 import asyncio
 
 #TODO: move it somewhere else?
@@ -143,7 +143,6 @@ class WorkflowOrchestrator:
             #TODO: handle the filter input
             handoffs=[
                 handoff(self.certification_agent,
-                        tool_name_override="transfer_to_certification_workflow",
                         input_type=Reason_Structure,
                         on_handoff=_print_reason),
                 handoff(self.answer_agent,
@@ -153,7 +152,30 @@ class WorkflowOrchestrator:
         )
         print("✅ WorkflowOrchestrator initialized successfully")
 
+    def _extract_cert_objs(self, chunk: str):
+        """
+        Incrementally parse and yield individual certification JSON objects from a streaming JSON array.
+        """
+        # Append new text
+        self._cert_buffer += chunk
+        # Strip opening '[' once
+        if not self._cert_array_stripped:
+            idx = self._cert_buffer.find('[')
+            if idx != -1:
+                self._cert_buffer = self._cert_buffer[idx+1:]
+                self._cert_array_stripped = True
+        # Pull out complete objects
+        while True:
+            try:
+                obj, consumed = self._cert_decoder.raw_decode(self._cert_buffer)
+            except ValueError:
+                break
+            yield obj
+            # Remove parsed object and leading separators
+            self._cert_buffer = self._cert_buffer[consumed:].lstrip(', \n')
+
     async def handle_user_question(self, session_id: str, message: str, db: AsyncSession, context=None):
+
         """
         Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → true agent streaming
         """
@@ -166,21 +188,35 @@ class WorkflowOrchestrator:
             validate_input(message)
             print("✅ Input validation passed")
             user_message_obj = await store_message_db(session_id, message, db, "user")
+            yield {"type": "user_message", "response": user_message_obj}
             print("✅ Message stored in database")
-            message_id = getattr(user_message_obj, 'message_id', None)
-            input_moderation(message)
+            user_message_id = getattr(user_message_obj, 'message_id', None)
+            if input_moderation(message):
+                assistant_message_obj = await store_message_db(session_id, "Sorry, I cannot help with harmful queries", db, "assistant", reply_to=user_message_id, type="harmful")
+                yield {"type": "harmful", "response": "Sorry, I cannot help with harmful queries"}
+                yield {"type": "completed", "response": assistant_message_obj}
+                return
             print("✅ Input moderation passed")
             context_data = await get_recent_context_db(db, session_id, 3)
             print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("\n🎯 Running triage agent with handoffs...")
-            summary_memory = context_data["summary"]
+
+            # Initialize certification streaming state on self
+            self._cert_buffer = ""
+            self._cert_decoder = json.JSONDecoder()
+            self._cert_array_stripped = False
+            buffering_cert = False
+
+            summary_memory = context["summary"]
 
             # Use true agent streaming
             result = Runner.run_streamed(
                 starting_agent=self.triage_agent,
                 input=message
             )
+            assistant_response = []
             async for event in result.stream_events():
+          
                 # Check for cancellation
                 if context and context.stop_event.is_set():
                     print(f"🛑 Workflow cancelled by frontend.")
@@ -197,50 +233,47 @@ class WorkflowOrchestrator:
                     elif getattr(item, 'type', None) == "tool_call_output_item":
                         output = getattr(item, 'output', None)
 
-                if output is not None:
-                    # Handle JSON strings
-                    if isinstance(output, str):
-                        try:
-                            output = json.loads(output)
-                        except Exception:
-                            pass  # Not JSON, keep as string
+                # 1) Agent handoff
+                if event.type == "agent_updated_stream_event":
+                    current_agent = event.new_agent
+                    buffering_cert = (current_agent is self.certification_agent)
+                    yield {"type": "processing", "response": f"Handing to {current_agent.name}"}
+                    if buffering_cert:
+                        yield {"type": "format", "response": "List of Certification"}
+                    continue
 
-                    # Handle CertificationAgent output (Certifications_Structure or dict with certifications)
-                    if isinstance(output, Certifications_Structure):
-                        for cert in output.certifications:
-                            yield cert
-                    elif isinstance(output, dict):
-                        # Check for nested certifications structure
-                        if 'certifications' in output:
-                            certs = output['certifications']
-                            if isinstance(certs, dict) and 'certifications' in certs:
-                                certs = certs['certifications']
-                            if isinstance(certs, list):
-                                for cert in certs:
-                                    yield cert
-                                continue
-                        # Check for list of certifications in any key
-                        for key, value in output.items():
-                            if isinstance(value, list) and len(value) > 0:
-                                if all(isinstance(item, dict) and 'certificate_name' in item for item in value):
-                                    for cert in value:
-                                        yield cert
-                                    continue
-                    # Handle AnswerAgent output (formatted text)
-                    elif isinstance(output, str):
-                        yield output
-                    # Handle other outputs as-is
-                    else:
-                        yield output
+                # 2) Tool use trigger (unchanged)
+                if event.type == "run_item_stream_event" and event.name == "tool_called":
+                    item = event.item
+                    tool = item.raw_item.name
+                    yield {"type": "processing", "response": f"Performing {tool}"}
+                    continue
+
+                # 3) Stream or buffer certification output
+                if event.type == "raw_response_event":
+                    data = event.data
+                    if isinstance(data, ResponseTextDeltaEvent):
+                        chunk = data.delta
+                        if buffering_cert:
+                            for obj in self._extract_cert_objs(chunk):
+                                yield {"type": "certification", "response": obj}
+                                assistant_response.append(obj)
+                        else:
+                            yield {"type": "summary_chunk", "response": chunk}
+                            assistant_response.append(chunk)
+                    continue
+            if not buffering_cert:
+                assistant_response = "".join(assistant_response) 
+            assistant_message_obj = await store_message_db(session_id, assistant_response, db, "assistant", reply_to=user_message_id)
+            yield {"type": "completed", "response": assistant_message_obj}
+            return
 
         except Exception as e:
             print(f"❌ Error in handle_user_question: {e}")
             import traceback
             print(f"🔍 Full traceback: {traceback.format_exc()}")
             yield {"error": str(e)}
-
-
- 
+            return
     async def compliance_research(self, search_queries: list[str]):
         """
         Specialized workflow for compliance requests.
@@ -251,7 +284,8 @@ class WorkflowOrchestrator:
         # Launch 3 tasks per query (RAG, Web, DB)
         tasks = []
         try:
-            for query in search_queries:
+            #TODO: change to full queries
+            for query in search_queries[:1]:
                 tasks.append(timed_task(f"Domain_web_search: {query}", self.web_search(query, use_domain = True)))
                 tasks.append(timed_task(f"web_search: {query}", self.web_search(query, use_domain = False)))
                 #TODO: add the RAG
@@ -280,7 +314,8 @@ class WorkflowOrchestrator:
         # Launch 3 tasks per query (RAG, Web, DB)
         tasks = []
         try:
-            for query in search_queries:
+            #TODO: change back to full queries
+            for query in search_queries[:1]:
                 tasks.append(timed_task(f"Domain_web_search: {query}", self.certification_web_search(query, use_domain = True)))
                 tasks.append(timed_task(f"web_search: {query}", self.certification_web_search(query, use_domain = False)))
                 #TODO: add the RAG
@@ -317,9 +352,6 @@ class WorkflowOrchestrator:
         except Exception as e:
             print(f"❌ Error in search_relevant_certification: {e}")
 
-    
-
-
     async def certification_web_search(self, query: str, use_domain: bool = False):
         """RAG API + Domain Search: Get domain metadata and search with domain filter"""
         from src.agent_system.internal import _domain_search_kb, _perplexity_certification_search
@@ -350,5 +382,4 @@ class WorkflowOrchestrator:
             
         except Exception as e:
             print(f"❌ domain web search failed: {e}")
-            return {}
-       
+            return {}       

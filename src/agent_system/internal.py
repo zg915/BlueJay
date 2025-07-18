@@ -121,8 +121,8 @@ async def _perplexity_search(query: str, domains: list = None):
         return []
 
 # Internal async functions for DB operations (not decorated)
-async def store_message_db(session_id: str, content: str, db, role: str = "user", reply_to: str = None):
-    return await add_chat_message(db, session_id, content, role=role, reply_to=reply_to)
+async def store_message_db(session_id: str, content: str, db, role: str = "user", reply_to: str = None, type: str = "text"):
+    return await add_chat_message(db, session_id, content, role=role, reply_to=reply_to, type=type)
 
 async def get_recent_context_db(db, session_id: str, chat_length: int):
     return await memory_get_recent_context(db, session_id, chat_length)

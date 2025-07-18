@@ -24,3 +24,7 @@ class Certification_Structure(BaseModel):
 class Certifications_Structure(BaseModel):
     """Wrapper model for certifications"""
     certifications: List[Certification_Structure]
+
+# class Certifications_Structure(RootModel[List[Certification_Structure]]):
+#     """List of certification objects"""
+#     pass

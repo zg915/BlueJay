@@ -21,8 +21,9 @@ def input_moderation(text: str):
     response = openai.moderations.create(input=text)
     results = response.results[0]
     if results.flagged:
-        raise ValueError(f"Input flagged as unsafe: {results.categories}")
-    return True
+        # raise ValueError(f"Input flagged as unsafe: {results.categories}")
+        return True
+    return False
 
 # Output moderation using OpenAI Moderation API
 def output_moderation(text: str):
