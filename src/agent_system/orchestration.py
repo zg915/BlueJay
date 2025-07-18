@@ -130,7 +130,6 @@ class WorkflowOrchestrator:
         from src.agent_system.tools.core import set_global_orchestrator
         set_global_orchestrator(self)
         
-
         # Initialize db as None - will be set during request processing
         self.db = None
         self.certification_agent = CertificationAgent(self)
@@ -192,7 +191,7 @@ class WorkflowOrchestrator:
             print("✅ Message stored in database")
             user_message_id = getattr(user_message_obj, 'message_id', None)
             if input_moderation(message):
-                assistant_message_obj = await store_message_db(session_id, "Sorry, I cannot help with harmful queries", db, "assistant", reply_to=user_message_id, type="harmful")
+                assistant_message_obj = await store_message_db(session_id, "Sorry, I cannot help with harmful queries", db, "assistant", reply_to=user_message_id)
                 yield {"type": "harmful", "response": "Sorry, I cannot help with harmful queries"}
                 yield {"type": "completed", "response": assistant_message_obj}
                 return
@@ -206,6 +205,7 @@ class WorkflowOrchestrator:
             self._cert_decoder = json.JSONDecoder()
             self._cert_array_stripped = False
             buffering_cert = False
+            is_cancelled = False
 
             # summary_memory = context["summary"]
 
@@ -220,18 +220,10 @@ class WorkflowOrchestrator:
                 # Check for cancellation
                 if context and context.stop_event.is_set():
                     print(f"🛑 Workflow cancelled by frontend.")
-                    yield {"status": "cancelled", "message": "Workflow was cancelled by user."}
+                    yield {"type": "cancelled", "message": "Response cancelled by User"}
+                    assistant_response.append("Response cancelled by User")
+                    is_cancelled = True
                     break
-                # output = None
-                # if event.type == "run_item_stream_event":
-                #     item = event.item
-                #     # Message output
-                #     if getattr(item, 'type', None) == "message_output_item":
-                #         from agents import ItemHelpers
-                #         output = ItemHelpers.text_message_output(item)
-                #     # Tool output
-                #     elif getattr(item, 'type', None) == "tool_call_output_item":
-                #         output = getattr(item, 'output', None)
 
                 # 1) Agent handoff
                 if event.type == "agent_updated_stream_event":
@@ -264,7 +256,7 @@ class WorkflowOrchestrator:
                     continue
             if not buffering_cert:
                 assistant_response = "".join(assistant_response) 
-            assistant_message_obj = await store_message_db(session_id, str(assistant_response), db, "assistant", reply_to=user_message_id)
+            assistant_message_obj = await store_message_db(session_id, str(assistant_response), db, "assistant", reply_to=user_message_id, is_cancelled = is_cancelled)
             yield {"type": "completed", "response": assistant_message_obj}
             return
 

@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agent_system.session_manager import workflow_sessions
 
+
 # Pydantic models for request/response
 class ChatRequest(BaseModel):
     session_id: str
@@ -49,14 +50,6 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
     print(f"💬 Session: {request.session_id}")
     print(f"📝 Content: {request.content}")
     context = workflow_sessions.create(request.session_id)
-    def to_serializable(obj):
-        if isinstance(obj, BaseModel):
-            return obj.model_dump()
-        elif isinstance(obj, list):
-            return [to_serializable(item) for item in obj]
-        elif isinstance(obj, dict):
-            return {k: to_serializable(v) for k, v in obj.items()}
-        return obj
 
     async def event_stream():
       
@@ -68,6 +61,8 @@ async def chat_stream(request: ChatRequest, db: AsyncSession):
                 context=context
             ):
                 yield f"data: {json.dumps(result, ensure_ascii=False)}\n\n"
+        except asyncio.CancelledError:
+            print(f"🛑 Workflow cancelled for session: {request.session_id}")
         finally:
             workflow_sessions.remove(request.session_id)
             yield f"data: {json.dumps({'status': 'end'})}\n\n"

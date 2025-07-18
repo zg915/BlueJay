@@ -98,6 +98,7 @@ async def add_chat_message(
     role: str = "user",
     reply_to: str | None = None,
     type: str = "text",
+    is_cancelled: bool = False
 ):
     """
     Add a chat message, mirroring the logic used in the newer DatabaseService.store_message
@@ -123,6 +124,7 @@ async def add_chat_message(
         message_order=message_order,
         reply_to=reply_to,
         type=type,
+        is_cancelled=is_cancelled
     )
     session.add(msg)
 
@@ -141,14 +143,6 @@ async def add_chat_message(
     await session.refresh(msg)
     return jsonable_encoder(msg)
 
-async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 9):
-    result = await session.execute(
-        select(ChatMessage)
-        .where(ChatMessage.session_id == session_id)
-        .order_by(ChatMessage.timestamp.desc())
-        .limit(n)
-    )
-    return result.scalars().all()
 
 async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 9):
     # 1) Fetch up to n recent messages
