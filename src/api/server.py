@@ -13,6 +13,11 @@ from .endpoints import (
     create_session, get_session_history,
     ChatRequest, SessionRequest
 )
+from src.agent_system.session_manager import workflow_sessions
+from pydantic import BaseModel
+
+class StopRequest(BaseModel):
+    session_id: str
 
 # Create FastAPI app
 app = FastAPI(
@@ -44,6 +49,11 @@ async def get_db():
 async def streaming_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
     """Streaming chat endpoint with real-time updates"""
     return await chat_stream(request, db)
+
+@app.post("/stop")
+async def stop_workflow(request: StopRequest):
+    workflow_sessions.stop(request.session_id)
+    return {"status": "cancelled", "session_id": request.session_id}
 
 @app.post("/ask")
 async def simple_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):

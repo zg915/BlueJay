@@ -153,7 +153,7 @@ class WorkflowOrchestrator:
         )
         print("✅ WorkflowOrchestrator initialized successfully")
 
-    async def handle_user_question(self, session_id: str, message: str, db: AsyncSession):
+    async def handle_user_question(self, session_id: str, message: str, db: AsyncSession, context=None):
         """
         Main workflow orchestration: pre-hooks → triage agent (with handoffs) → workflow agent → true agent streaming
         """
@@ -170,10 +170,10 @@ class WorkflowOrchestrator:
             message_id = getattr(user_message_obj, 'message_id', None)
             input_moderation(message)
             print("✅ Input moderation passed")
-            context = await get_recent_context_db(db, session_id, 3)
-            print(f"📚 Retrieved last {context.get('message_count', 0)} messages")
+            context_data = await get_recent_context_db(db, session_id, 3)
+            print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("\n🎯 Running triage agent with handoffs...")
-            summary_memory = context["summary"]
+            summary_memory = context_data["summary"]
 
             # Use true agent streaming
             result = Runner.run_streamed(
@@ -181,6 +181,11 @@ class WorkflowOrchestrator:
                 input=message
             )
             async for event in result.stream_events():
+                # Check for cancellation
+                if context and context.stop_event.is_set():
+                    print(f"🛑 Workflow cancelled by frontend.")
+                    yield {"status": "cancelled", "message": "Workflow was cancelled by user."}
+                    break
                 output = None
                 if event.type == "run_item_stream_event":
                     item = event.item
@@ -276,7 +281,7 @@ class WorkflowOrchestrator:
         tasks = []
         try:
             for query in search_queries:
-                tasks.append(timed_task(f"Domain_web_search: {query}", self._ertification_web_search(query, use_domain = True)))
+                tasks.append(timed_task(f"Domain_web_search: {query}", self.certification_web_search(query, use_domain = True)))
                 tasks.append(timed_task(f"web_search: {query}", self.certification_web_search(query, use_domain = False)))
                 #TODO: add the RAG
                 # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
