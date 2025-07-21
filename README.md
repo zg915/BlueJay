@@ -1,403 +1,229 @@
 # BlueJay - Agentic Workflow System
 
-A sophisticated, modular agent-driven workflow system for compliance and certification research, built with FastAPI, SQLAlchemy, and OpenAI's Agents SDK.
+A modular, agent-driven workflow system for compliance and certification research, featuring real-time streaming, robust cancellation, and extensible agent orchestration.
+
+---
 
 ## 🚀 Overview
 
-BlueJay is an intelligent system that automatically routes user queries to specialized workflow agents, providing comprehensive research and certification information. The system uses a triage agent to classify queries and hand off to appropriate workflow agents for detailed processing.
+BlueJay is an intelligent backend system that routes user queries to specialized workflow agents for compliance, certification, and research tasks. It leverages OpenAI's Agents SDK, FastAPI, and async streaming to deliver real-time, structured results with support for user-initiated cancellation.
 
-### Key Features
+---
 
-- **Intelligent Query Classification**: Automatic routing of queries to specialized agents
-- **Multi-Source Research**: Parallel web search, RAG API integration, and database lookups
-- **Real-time Streaming**: FastAPI-based streaming responses
-- **Comprehensive Logging**: Detailed debugging and monitoring capabilities
-- **Modular Architecture**: Easy to extend with new workflow agents
-- **Database Integration**: Persistent storage with SQLAlchemy and PostgreSQL
+## 🏗️ Key Features
 
-## 🏗️ Architecture
+- **Agentic Orchestration:** Triage agent routes queries to specialized agents (Certification, Answer, etc.)
+- **Real-Time Streaming:** Results are streamed to the client as soon as they are produced (certification-wise or message-wise)
+- **User-Initiated Cancellation:** Users can cancel any in-progress workflow via a `/stop` endpoint
+- **Session Management:** Each workflow session is tracked and can be cancelled or cleaned up
+- **Parallel Search:** Multi-source research (web, RAG, DB) for comprehensive answers
+- **Database Integration:** Async SQLAlchemy/PostgreSQL for persistent chat, session, and research data
+- **Extensible:** Easily add new agents, tools, or data sources
 
-### System Components
-
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   API Layer     │    │  Orchestration  │    │  Workflow       │
-│   (FastAPI)     │───▶│   (Triage +     │───▶│   Agents        │
-│                 │    │   Handoffs)     │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                                ▼
-                       ┌─────────────────┐
-                       │   OpenAI        │
-                       │   Processing    │
-                       └─────────────────┘
-```
-
-### Agent Hierarchy
-
-1. **Triage Agent**: Classifies queries and routes to appropriate workflow
-2. **Certification Workflow Agent**: Handles certification and compliance queries
-3. **Research Workflow Agent**: Handles general research and information queries
-
-### Data Flow
-
-1. **User Input** → API Endpoint
-2. **Pre-hooks** → Input validation, moderation, database storage
-3. **Triage Agent** → Query classification and handoff
-4. **Workflow Agent** → Specialized processing (certification/research)
-5. **OpenAI Processing** → Result synthesis and deduplication
-6. **Response** → Formatted output to user
+---
 
 ## 🛠️ Technology Stack
 
-- **Backend**: FastAPI, SQLAlchemy, PostgreSQL
-- **AI/ML**: OpenAI GPT-4, OpenAI Agents SDK
-- **Search**: Perplexity API, RAG API integration
-- **Database**: PostgreSQL with async support
-- **Logging**: Comprehensive debugging and monitoring
-- **Testing**: pytest, async testing support
+- **Backend:** FastAPI, SQLAlchemy (async), PostgreSQL
+- **AI/Agents:** OpenAI Agents SDK, GPT-4, Perplexity API
+- **Streaming:** Server-Sent Events (SSE) via FastAPI StreamingResponse
+- **Session Management:** Custom session manager with asyncio.Event for cancellation
+- **Testing:** pytest
 
-## 📋 Prerequisites
+---
 
-- Python 3.8+
-- PostgreSQL 12+
-- OpenAI API key
-- Perplexity API key (optional)
-- RAG API access (optional)
+## 📦 Project Structure
 
-## 🚀 Installation
+```
+BlueJay/
+├── src/
+│   ├── agent_system/          # Agent definitions, orchestration, session manager
+│   ├── api/                   # FastAPI endpoints and server
+│   ├── config/                # Prompts and output schemas
+│   ├── database/              # Models and async services
+│   ├── memory/                # Conversation memory/context
+│   └── tests/                 # Test files
+├── requirements.txt           # Python dependencies
+├── README.md                  # This file
+```
 
-### 1. Clone the Repository
+---
 
-```bash
+## ⚡ Quickstart
+
+### 1. Clone & Setup
+```sh
 git clone <repository-url>
 cd BlueJay
-```
-
-### 2. Create Virtual Environment
-
-```bash
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
-
-### 3. Install Dependencies
-
-```bash
 pip install -r requirements.txt
 ```
 
-### 4. Environment Configuration
-
-Create a `.env` file in the root directory:
-
-```env
-# Database Configuration
+### 2. Configure Environment
+Create a `.env` file in the root:
+```
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=tic_research
 DB_USER=postgres
 DB_PASSWORD=your_password
-
-# OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key
-
-# Optional APIs
 PERPLEXITY_API_KEY=your_perplexity_api_key
-RAG_API_URL=your_rag_api_url
-RAG_API_KEY=your_rag_api_key
-
-# Server Configuration
-HOST=0.0.0.0
-PORT=8000
-DEBUG=True
 ```
 
-### 5. Database Setup
-
-```bash
-# Initialize database
+### 3. Initialize Database
+```sh
 python init_database.py
-
-# Test database connection
-python test_db_connection.py
 ```
 
-### 6. Start the Server
-
-```bash
-# Development mode
+### 4. Run the Server
+```sh
 uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
-
-# Production mode
-uvicorn src.api.server:app --host 0.0.0.0 --port 8000
 ```
 
-## 📚 API Documentation
+---
 
-### Base URL
-```
-http://localhost:8000
-```
+## 🌐 API Usage
 
-### Available Endpoints
-
-#### 1. Health Check
-```http
-GET /health
-```
-
-#### 2. Create Session
-```http
-POST /sessions
-Content-Type: application/json
-
-{
-  "user_id": "user123",
-  "session_name": "My Session"
-}
-```
-
-#### 3. Streaming Chat
-```http
-POST /chat/stream
-Content-Type: application/json
-
-{
-  "session_id": "session456",
-  "message": "List all certifications required to export electronics from India to the US"
-}
-```
-
-#### 4. Simple Chat
-```http
-POST /chat/simple
-Content-Type: application/json
-
-{
-  "session_id": "session456",
-  "message": "What is ISO 9001 certification?"
-}
-```
-
-#### 5. Get Session History
-```http
-GET /sessions/{session_id}/history
-```
-
-### Response Formats
-
-#### Streaming Response
+### **Streaming Chat**
+**POST** `/ask/stream`
 ```json
 {
-  "status": "complete",
-  "response": "Based on the search results, here are the required certifications..."
+  "session_id": "test-session-1",
+  "content": "List all certifications required to export lip balm from India to USA"
 }
 ```
+- **Response:** Server-Sent Events (SSE), each event is a JSON object (certification, message, or status)
 
-#### Simple Chat Response
+### **Cancel a Workflow**
+**POST** `/stop`
 ```json
 {
-  "response": "ISO 9001 is a quality management system standard...",
-  "question_type": "research",
-  "enhanced_query": "ISO 9001 quality management system certification details"
+  "session_id": "test-session-1"
 }
 ```
+- **Effect:** Immediately cancels the workflow and streaming for the given session.
 
-## 🔧 Configuration
+### **Other Endpoints**
+- `/ask` — Non-streaming chat
+- `/health` — Health check
+- `/sessions` — Create session
+- `/sessions/{session_id}/history` — Get session history
 
-### Agent Configuration
+---
 
-The system uses several configuration files:
+## 🧩 How Streaming & Cancellation Work
 
-- `src/config/prompts.py`: Agent prompts and instructions
-- `src/agent_system/agents.py`: Workflow agent definitions
-- `src/agent_system/orchestration.py`: Main orchestration logic
+- **Session Manager:** Each streaming request creates a `WorkflowContext` (with an `asyncio.Event`) tracked by session ID.
+- **Streaming:** The orchestrator yields results (certification-wise or message-wise) as soon as they are produced by the agent.
+- **Cancellation:**
+  - User calls `/stop` with the session ID.
+  - The session manager sets the cancellation event.
+  - The orchestrator detects this and stops streaming, yielding a cancellation message.
+- **Client Disconnect:** If the client disconnects (browser reloads, etc.), the server cancels the streaming generator and cleans up the session.
 
-### Database Models
+---
 
-Key database models in `src/database/models.py`:
+## 🧠 Agentic Workflow
 
-- `ChatMessage`: Stores user messages and responses
-- `Session`: Manages user sessions
-- `ResearchRequest`: Tracks research requests
-- `Summary`: Stores conversation summaries
+- **Triage Agent:** Classifies user queries and hands off to the appropriate specialized agent.
+- **CertificationAgent:** Handles certification/compliance queries, streams each certification as soon as available.
+- **AnswerAgent:** Handles general Q&A, streams formatted answers.
+- **Orchestrator:** Manages agent handoff, streaming, and cancellation.
 
-## 🧪 Testing
+---
 
-### Run Tests
-```bash
-# Run all tests
-pytest
+## 🔍 Detailed Workflow Descriptions
 
-# Run specific test file
-pytest tests/test_api_endpoints.py
+### 1. Triage Agent
+- **Role:** First point of contact for all user queries.
+- **Function:** Analyzes the user's message and determines which specialized agent (CertificationAgent or AnswerAgent) should handle the request.
+- **Streaming:** Streams a handoff event indicating which agent will process the query.
+- **Cancellation:** If cancelled during triage, the workflow stops before any specialized agent is invoked.
+- **Key Code:**
+  - `src/agent_system/orchestration.py` — `WorkflowOrchestrator.triage_agent` (Agent instantiation and handoff logic)
+  - `src/config/prompts.py` — `TRIAGE_AGENT_INSTRUCTION` (Prompt for triage agent)
 
-# Run with coverage
-pytest --cov=src
-```
+### 2. CertificationAgent
+- **Role:** Handles all queries related to certifications, compliance, and regulatory requirements.
+- **Function:**
+  - Generates multiple targeted search queries based on the user's product and scenario.
+  - Runs parallel domain and web searches for each query.
+  - Aggregates, deduplicates, and normalizes certification results.
+  - **Streaming:** As soon as each certification is parsed from the agent's output, it is streamed to the client as a separate event (certification-wise streaming).
+  - **Cancellation:** If the user cancels, streaming stops immediately and a cancellation message is sent.
+- **Key Code:**
+  - `src/agent_system/agents/certification.py` — `CertificationAgent` class
+  - `src/agent_system/orchestration.py` — Certification streaming logic in `handle_user_question` and `_extract_cert_objs`
+  - `src/config/prompts.py` — `CERTIFICATION_AGENT_INSTRUCTION` (Prompt for certification agent)
+  - `src/config/output_structure.py` — `Certifications_Structure` (Output schema)
 
-### Test Database Connection
-```bash
-python test_db_connection.py
-```
+### 3. AnswerAgent
+- **Role:** Handles general compliance, regulatory, and informational queries.
+- **Function:**
+  - Uses compliance and web search tools to gather information.
+  - Synthesizes a structured, formatted answer (Markdown, headings, summary, etc.).
+  - **Streaming:** Streams the answer as soon as it is generated (can be chunked or as a single message, depending on agent output).
+  - **Cancellation:** If the user cancels, streaming stops and a cancellation message is sent.
+- **Key Code:**
+  - `src/agent_system/agents/answer.py` — `AnswerAgent` class
+  - `src/agent_system/orchestration.py` — Streaming logic in `handle_user_question`
+  - `src/config/prompts.py` — `ANSWER_AGENT_INSTRUCTION` (Prompt for answer agent)
 
-## 📊 Monitoring and Logging
+### 4. Orchestrator
+- **Role:** Central router and workflow manager.
+- **Function:**
+  - Handles pre-processing (validation, moderation, context loading).
+  - Runs the triage agent and manages handoff to specialized agents.
+  - Manages streaming: yields each result (certification, message, or status) as soon as it is available.
+  - Checks for cancellation before yielding each result, ensuring immediate stop if requested.
+  - Handles client disconnects and session cleanup.
+- **Key Code:**
+  - `src/agent_system/orchestration.py` — `WorkflowOrchestrator` class, especially `handle_user_question`
+  - `src/agent_system/session_manager.py` — `WorkflowSessionManager` and `WorkflowContext` (cancellation/session state)
+  - `src/api/endpoints.py` — `chat_stream` (API streaming endpoint)
+  - `src/api/server.py` — `/ask/stream` and `/stop` endpoints
 
-The system includes comprehensive logging:
+---
 
-- **Request/Response Logging**: All API calls are logged
-- **Agent Execution Logging**: Detailed agent workflow tracking
-- **Error Logging**: Full stack traces for debugging
-- **Performance Logging**: Timing information for parallel operations
+## 📝 Extending BlueJay
 
-### Log Levels
-- `DEBUG`: Detailed debugging information
-- `INFO`: General operational information
-- `WARNING`: Warning messages
-- `ERROR`: Error messages with stack traces
+- **Add a new agent:**
+  - Create a new agent class in `src/agent_system/agents/`
+  - Register it in the orchestrator
+  - Add handoff logic in the triage agent
+- **Add new tools/data sources:**
+  - Implement in `src/agent_system/tools/`
+  - Register with agents as needed
+- **Customize prompts/output:**
+  - Edit `src/config/prompts.py` and `src/config/output_structure.py`
 
-## 🔄 Workflow Examples
+---
 
-### Certification Query Example
+## 🧰 Troubleshooting
 
-**Input**: "List all certifications required to export electronics from India to the US"
+- **Check logs** for errors and workflow traces
+- **Verify environment variables** are set correctly
+- **Test database connection** with `python test_db_connection.py`
+- **Use `/health` endpoint** to verify server is running
 
-**Flow**:
-1. Triage Agent classifies as "certification"
-2. Uses `transfer_to_certification_workflow` handoff
-3. Certification Workflow Agent executes:
-   - Generates multiple search queries
-   - Performs parallel web searches
-   - Searches RAG API for domain-specific information
-   - Queries internal database
-   - Combines and deduplicates results
-4. OpenAI processes results for final synthesis
-5. Returns structured certification list
-
-### Research Query Example
-
-**Input**: "What is the difference between ISO 9001 and ISO 14001?"
-
-**Flow**:
-1. Triage Agent classifies as "research"
-2. Uses `transfer_to_research_workflow` handoff
-3. Research Workflow Agent executes:
-   - Performs comprehensive web research
-   - Gathers information from multiple sources
-   - Synthesizes detailed comparison
-4. Returns comprehensive research response
-
-## 🚀 Deployment
-
-### Docker Deployment
-
-```dockerfile
-FROM python:3.9-slim
-
-WORKDIR /app
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-COPY . .
-EXPOSE 8000
-
-CMD ["uvicorn", "src.api.server:app", "--host", "0.0.0.0", "--port", "8000"]
-```
-
-### Environment Variables for Production
-
-```env
-# Production Database
-DB_HOST=your_production_db_host
-DB_PORT=5432
-DB_NAME=tic_research_prod
-DB_USER=your_db_user
-DB_PASSWORD=your_secure_password
-
-# Production OpenAI
-OPENAI_API_KEY=your_production_openai_key
-
-# Security
-SECRET_KEY=your_secret_key
-DEBUG=False
-```
-
-## 🔧 Development
-
-### Project Structure
-
-```
-BlueJay/
-├── src/
-│   ├── agent_system/          # Agent definitions and orchestration
-│   ├── api/                   # FastAPI endpoints and server
-│   ├── config/                # Configuration and prompts
-│   ├── database/              # Database models and services
-│   ├── memory/                # Memory and context management
-│   └── services/              # External service integrations
-├── tests/                     # Test files
-├── requirements.txt           # Python dependencies
-├── init_database.py          # Database initialization
-├── test_db_connection.py     # Database connection test
-└── README.md                 # This file
-```
-
-### Adding New Workflow Agents
-
-1. Create new agent class in `src/agent_system/agents.py`
-2. Add handoff configuration in `src/agent_system/orchestration.py`
-3. Update triage agent prompt in `src/config/prompts.py`
-4. Add corresponding workflow method in orchestrator
-
-### Extending the System
-
-- **New Data Sources**: Add to `src/agent_system/tools.py`
-- **New Agent Types**: Extend base Agent class
-- **New API Endpoints**: Add to `src/api/endpoints.py`
-- **New Database Models**: Add to `src/database/models.py`
+---
 
 ## 🤝 Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+2. Create a feature branch (`git checkout -b feature/your-feature`)
+3. Commit your changes
+4. Push to your branch
 5. Open a Pull Request
-
-## 📝 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## 🆘 Support
-
-For support and questions:
-
-1. Check the logs for detailed error information
-2. Review the API documentation at `/docs` when server is running
-3. Test database connection with `python test_db_connection.py`
-4. Verify environment variables are correctly set
-
-## 🔮 Roadmap
-
-- [ ] Add more specialized workflow agents
-- [ ] Implement caching for improved performance
-- [ ] Add user authentication and authorization
-- [ ] Create web-based admin interface
-- [ ] Add support for file uploads and document processing
-- [ ] Implement real-time collaboration features
-- [ ] Add analytics and usage tracking
-- [ ] Create mobile API endpoints
-
-## 📄 Changelog
-
-### v1.0.0
-- Initial release with triage agent and workflow system
-- FastAPI-based API with streaming support
-- PostgreSQL integration with async support
-- OpenAI Agents SDK integration
-- Comprehensive logging and debugging
 
 ---
 
-**BlueJay** - Intelligent Agentic Workflow System for Compliance Research 
+## 📝 License
+
+This project is licensed under the MIT License.
+
+---
+
+**BlueJay** — Real-time, agentic compliance research with streaming and cancellation. 
