@@ -16,7 +16,9 @@ class CertificationAgent(Agent):
             handoff_description = CERTIFICATION_AGENT_DESCRIPTION,
             instructions=CERTIFICATION_AGENT_INSTRUCTION,
             tools=[search_relevant_certification],
-            model_settings=ModelSettings(tool_choice="search_relevant_certification"),
+            model_settings=ModelSettings(tool_choice="search_relevant_certification",
+                                        #  parallel_tool_calls=True
+                                         ),
             output_type=Certifications_Structure
         )
         self.orchestrator = orchestrator 

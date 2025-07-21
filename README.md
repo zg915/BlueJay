@@ -146,7 +146,7 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
   - `src/config/prompts.py` — `TRIAGE_AGENT_INSTRUCTION` (Prompt for triage agent)
 
 ### 2. CertificationAgent
-- **Role:** Handles all queries related to certifications, compliance, and regulatory requirements.
+- **Role:** Handles all queries related to getting a comprehensive list of certifications, compliance, and regulatory requirements.
 - **Function:**
   - Generates multiple targeted search queries based on the user's product and scenario.
   - Runs parallel domain and web searches for each query.

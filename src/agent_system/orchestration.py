@@ -230,8 +230,10 @@ class WorkflowOrchestrator:
                     current_agent = event.new_agent
                     buffering_cert = (current_agent is self.certification_agent)
                     yield {"type": "processing", "response": f"Handing to {current_agent.name}"}
-                    if buffering_cert:
-                        yield {"type": "format", "response": "List of Certification"}
+                    if current_agent is self.certification_agent:
+                        yield {"type": "format", "response": "List"}
+                    elif current_agent is self.answer_agent:
+                        yield {"type": "format", "response": "Answer"}
                     continue
 
                 # 2) Tool use trigger (unchanged)
