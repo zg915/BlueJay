@@ -3,6 +3,7 @@ from typing import Optional, List
 import json
 from agents import RunContextWrapper
 from typing import Any
+from agents import Agent, handoff, ItemHelpers, Runner
 
 # Global orchestrator placeholder (set this from your app entrypoint)
 global_orchestrator = None
@@ -13,36 +14,7 @@ def set_global_orchestrator(orchestrator):
     global_orchestrator = orchestrator
     return True
 
-@function_tool
-def set_certification_workflow_orchestrator(orchestrator):
-    global global_orchestrator
-    global_orchestrator = orchestrator
-    return True
-
-def safe_parse_context(context_json):
-    print(f"[DEBUG] Raw context_json: {context_json!r}")
-    if not context_json:
-        return None
-    try:
-        return json.loads(context_json)
-    except Exception:
-        try:
-            import ast
-            return ast.literal_eval(context_json)
-        except Exception:
-            # Try string replacement as last resort
-            fixed = (
-                context_json
-                .replace('None', 'null')
-                .replace('True', 'true')
-                .replace('False', 'false')
-                .replace("'", '"')
-            )
-            try:
-                return json.loads(fixed)
-            except Exception:
-                raise ValueError("Context is not valid JSON or Python dict string")
-            
+#used by certification agent
 @function_tool(name_override="search_relevant_certification")
 async def search_relevant_certification(search_queries: List[str]) -> Any:
     """Return a comprehensive raw list of certifications for four complementary queries.
@@ -65,6 +37,7 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
     # db = getattr(global_orchestrator, "db", None)
     return await global_orchestrator.search_relevant_certification(search_queries)
 
+#used by answer agent
 @function_tool
 async def web_search(search_query: str):
     """Perform web search using the provided search queries.
@@ -81,6 +54,7 @@ async def web_search(search_query: str):
         )
     return await global_orchestrator.web_search(search_query)
 
+#used by answer agent
 @function_tool
 async def compliance_research(search_queries: list[str]):
     """Perform web search and Compliance Database search to provide professional compliance answers.
@@ -95,32 +69,35 @@ async def compliance_research(search_queries: list[str]):
         raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
     return await global_orchestrator.compliance_research(search_queries)
 
+#used by flashcard agent
+@function_tool
+async def flashcard_web_search(search_query: str):
+    """Perform web search to provide professional certification answers tailored for preparing flashcards.
 
-# @function_tool
-# def call_rag_api(text: str, dataset_id: str = None, limit: int = 2500, similarity: int = 0, search_mode: str = "embedding", using_re_rank: bool = False):
-#     from src.agent_system.internal import _call_rag_api_impl
-#     return _call_rag_api_impl(text, dataset_id, limit, similarity, search_mode, using_re_rank)
+    Args:
+        search_query: One English search strings used to search the internet
 
-# @function_tool
-# def generate_search_queries(enhanced_query: str, num_queries: int = 4):
-#     from . import _generate_search_queries_impl
-#     return _generate_search_queries_impl(enhanced_query, num_queries)
+    Returns:
+        A JSON‑serialisable object containing the combined search results for the flash card information.
+    """
+    if global_orchestrator is None:
+        raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
+    return await global_orchestrator.certification_web_search(search_query)
 
-# @function_tool
-# def map_queries_to_websites(queries: list[str], domain_metadata: str):
-#     from . import _map_queries_to_websites_impl
-#     return _map_queries_to_websites_impl(queries, domain_metadata)
+# used by answer agent
+@function_tool
+async def prepare_flashcard(certification_name:str, context: str = None):
+    """Generate a Flashcard JSON for a single certification using the FlashcardAgent.
 
-# @function_tool
-# def create_parallel_queries(queries: list[str]):
-#     return queries
+    Args:
+        certification_name: The exact name (or best-known alias) of the certification/standard to summarize.
+        context: Optional short context (e.g., product type, target market/country) to help determine `mandatory`
+                 and tailor the description. Pass None if unavailable.
 
-# @function_tool
-# async def run_parallel_queries(query_funcs: list[str]):
-#     import asyncio
-#     results = await asyncio.gather(*[func() for func in query_funcs])
-#     return results
-
-# @function_tool
-# def synthesize_results(results: list[str]):
-#     return "\n".join(str(r) for r in results)
+    Returns:
+        A JSON-serialisable object matching the `Flashcard` schema (name, issuing_body, region, description,
+        classifications, mandatory, validity, official_link). The object is produced by running the FlashcardAgent.
+    """
+    if global_orchestrator is None:
+        raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
+    return await global_orchestrator.prepare_flashcard(certification_name, context)

@@ -40,6 +40,7 @@ class ChatMessage(Base):
     is_cancelled = Column(Boolean, default=False)
     cancellation_timestamp = Column(DateTime, nullable=True)
     cancellation_reason = Column(Text, nullable=True)
+    certifications = Column(JSON, default=list)
     session = relationship('ChatSession', back_populates='messages')
 
 class ResearchRequest(Base):

@@ -14,7 +14,7 @@ import json
 import re
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, RootModel
-from src.config.output_structure import Certifications_Structure
+from src.config.output_structure import Flashcards_Structure
 
 async def _perplexity_certification_search(query: str, domains: list = None):
     """
@@ -43,7 +43,7 @@ async def _perplexity_certification_search(query: str, domains: list = None):
         "temperature": 0.1,
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"schema": Certifications_Structure.schema()}
+            "json_schema": {"schema": Flashcards_Structure.schema()}
         }
     }
     if domains:
@@ -121,8 +121,8 @@ async def _perplexity_search(query: str, domains: list = None):
         return []
 
 # Internal async functions for DB operations (not decorated)
-async def store_message_db(session_id: str, content: str, db, role: str = "user", reply_to: str = None, type: str = "text", is_cancelled: bool = False):
-    return await add_chat_message(db, session_id, content, role=role, reply_to=reply_to, type=type, is_cancelled=is_cancelled)
+async def store_message_db(session_id: str, content: str, db, role: str, certifications: list = None, reply_to: str = None, type: str = "text", is_cancelled: bool = False):
+    return await add_chat_message(db, session_id=session_id, content=content, certifications=certifications, role=role, reply_to=reply_to, type=type, is_cancelled=is_cancelled)
 
 async def get_recent_context_db(db, session_id: str, chat_length: int):
     return await memory_get_recent_context(db, session_id, chat_length)

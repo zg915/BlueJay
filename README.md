@@ -157,7 +157,7 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
   - `src/agent_system/agents/certification.py` — `CertificationAgent` class
   - `src/agent_system/orchestration.py` — Certification streaming logic in `handle_user_question` and `_extract_cert_objs`
   - `src/config/prompts.py` — `CERTIFICATION_AGENT_INSTRUCTION` (Prompt for certification agent)
-  - `src/config/output_structure.py` — `Certifications_Structure` (Output schema)
+  - `src/config/output_structure.py` — `Flashcards_Structure` (Output schema)
 
 ### 3. AnswerAgent
 - **Role:** Handles general compliance, regulatory, and informational queries.

@@ -3,12 +3,13 @@ Orchestration agent for routing requests to specialized agents
 """
 
 import json
+from json.decoder import scanstring
 import time
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Agent, handoff, ItemHelpers, Runner
 from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionCallArgumentsDeltaEvent
-from .agents import CertificationAgent, AnswerAgent
+from .agents import CertificationAgent, AnswerAgent, FlashcardAgent
 from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
 from src.config.output_structure import Reason_Structure
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
@@ -18,10 +19,12 @@ from src.agent_system.internal import (
 )
 
 import asyncio
+import re
+
 
 #TODO: move it somewhere else?
 from pydantic import BaseModel, Field
-from src.config.output_structure import Certifications_Structure
+from src.config.output_structure import Flashcards_Structure
 class ReasonArgs(BaseModel):
 
     reason: str = Field(
@@ -75,11 +78,10 @@ async def timed_task(name, coro):
 
 def print_timing_table(task_results):
     """Print a formatted table of task timings"""
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print("📊 PARALLEL TASK TIMING TABLE")
-    print("="*80)
-    
-    # Create table data
+    print("=" * 80)
+
     table_data = []
     for task_result in task_results:
         if isinstance(task_result, dict):
@@ -87,7 +89,6 @@ def print_timing_table(task_results):
             end_str = task_result["end"].strftime('%H:%M:%S.%f')[:-3]
             duration_str = f"{task_result['duration']:.2f}s"
             status = task_result["status"]
-            
             table_data.append([
                 task_result["name"],
                 start_str,
@@ -96,7 +97,6 @@ def print_timing_table(task_results):
                 status
             ])
         else:
-            # Handle exceptions
             table_data.append([
                 f"Task-{len(table_data)+1}",
                 "-",
@@ -104,20 +104,158 @@ def print_timing_table(task_results):
                 "-",
                 "ERROR"
             ])
-    
-    # Print table manually (no external dependencies)
+
     if table_data:
-        # Header
         print(f"{'Task Name':<25} {'Start Time':<15} {'End Time':<15} {'Duration':<10} {'Status':<10}")
         print("-" * 80)
-        
-        # Data rows
         for row in table_data:
             print(f"{row[0]:<25} {row[1]:<15} {row[2]:<15} {row[3]:<10} {row[4]:<10}")
-    
-    print("="*80)
+
+    print("=" * 80)
     print("💡 Parallel execution confirmed! All tasks started at nearly the same time.")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
+
+
+
+# -------- Minimal stream parsers --------
+class AnswerStreamer:
+    """Stream a single JSON string value for key "answer"."""
+    KEY = '"answer"'
+
+    def __init__(self):
+        self.in_answer = False
+        self.finished = False
+        self.start_idx = -1   # index of first char INSIDE the string
+        self.stream_pos = 0   # how many chars from the answer we've emitted
+
+    @staticmethod
+    def _find_start(buf: str, search_from: int) -> int:
+        k = buf.find(AnswerStreamer.KEY, search_from)
+        if k == -1:
+            return -1
+        colon = buf.find(":", k + len(AnswerStreamer.KEY))
+        if colon == -1:
+            return -1
+        q = buf.find('"', colon + 1)
+        return -1 if q == -1 else q + 1
+
+    @staticmethod
+    def _scan_to_close(buf: str, start: int):
+        """
+        Scan forward from `start` (inside a JSON string) until we find the closing quote.
+        Returns (end_pos_exclusive, raw_piece, finished_bool).
+        raw_piece is the newly available raw substring (without closing quote).
+        """
+        i = start
+        escaped = False
+        while i < len(buf):
+            c = buf[i]
+            if escaped:
+                escaped = False
+            elif c == '\\':
+                escaped = True
+            elif c == '"':
+                return i + 1, buf[start:i], True
+            i += 1
+        return i, buf[start:], False
+
+    def feed(self, global_buf: str, prev_len: int):
+        """Yield decoded text chunks as they become available."""
+        if self.finished:
+            return []
+        out = []
+
+        # enter answer mode if not yet
+        if not self.in_answer:
+            start = self._find_start(global_buf, 0)  # search entire buffer for robustness
+            if start != -1:
+                self.in_answer = True
+                self.start_idx = start
+                self.stream_pos = 0
+
+        # if inside answer, stream what's new
+        if self.in_answer:
+            abs_pos = self.start_idx + self.stream_pos
+            if abs_pos < len(global_buf):
+                end_pos, raw_piece, done = self._scan_to_close(global_buf, abs_pos)
+                if raw_piece:
+                    try:
+                        out.append(json.loads(f'"{raw_piece}"'))
+                    except Exception:
+                        out.append(raw_piece)
+                    self.stream_pos += len(raw_piece)
+                if done:
+                    self.in_answer = False
+                    self.finished = True
+                    self.stream_pos += 1  # closing quote
+        return out
+
+
+class FlashcardStreamer:
+    """Stream objects inside the JSON array under key "flashcards" using a raw_decode loop."""
+    KEY = '"flashcards"'
+
+    def __init__(self):
+        self.started = False
+        self.done = False
+        self.buf = ""                  # everything after the '[' of the array
+        self.decoder = json.JSONDecoder()
+
+    @staticmethod
+    def _find_array_lb(buf: str, search_from: int) -> int:
+        k = buf.find(FlashcardStreamer.KEY, search_from)
+        if k == -1:
+            return -1
+        lb = buf.find("[", k)
+        return lb
+
+    def _extract(self):
+        """Return list of parsed objs, update self.buf, and set done when ']' hit."""
+        out = []
+        s = self.buf.lstrip(", \n")
+        while s:
+            # array end?
+            if s and s[0] == ']':
+                self.done = True
+                s = s[1:]  # drop the ']'
+                break
+            # not starting at object? skip one char
+            if s and s[0] != '{':
+                s = s[1:]
+                continue
+            # try to decode one object
+            try:
+                obj, consumed = self.decoder.raw_decode(s)
+            except ValueError:
+                # need more data
+                break
+            out.append(obj)
+            s = s[consumed:].lstrip(", \n")
+        self.buf = s
+        return out
+
+    def feed(self, global_buf: str, prev_len: int, new_chunk: str):
+        """Yield flashcard dicts as they complete."""
+        if self.done:
+            return []
+
+        out = []
+        # detect start of array once
+        if not self.started:
+            lb = self._find_array_lb(global_buf, max(0, prev_len - 64))
+            if lb != -1:
+                self.started = True
+                # push everything after '[' into buffer
+                self.buf += global_buf[lb + 1:]
+                out.extend(self._extract())
+                return out
+
+        # if already started, just append the new chunk and parse
+        if self.started and not self.done:
+            self.buf += new_chunk
+            out.extend(self._extract())
+
+        return out
 
 class WorkflowOrchestrator:
     def __init__(self):
@@ -134,7 +272,6 @@ class WorkflowOrchestrator:
         self.db = None
         self.certification_agent = CertificationAgent(self)
         self.answer_agent = AnswerAgent(self)
-
         self.triage_agent = Agent(
             name="Triage agent",
             model="gpt-4o",
@@ -150,28 +287,8 @@ class WorkflowOrchestrator:
             ]
         )
         print("✅ WorkflowOrchestrator initialized successfully")
+    
 
-    def _extract_cert_objs(self, chunk: str):
-        """
-        Incrementally parse and yield individual certification JSON objects from a streaming JSON array.
-        """
-        # Append new text
-        self._cert_buffer += chunk
-        # Strip opening '[' once
-        if not self._cert_array_stripped:
-            idx = self._cert_buffer.find('[')
-            if idx != -1:
-                self._cert_buffer = self._cert_buffer[idx+1:]
-                self._cert_array_stripped = True
-        # Pull out complete objects
-        while True:
-            try:
-                obj, consumed = self._cert_decoder.raw_decode(self._cert_buffer)
-            except ValueError:
-                break
-            yield obj
-            # Remove parsed object and leading separators
-            self._cert_buffer = self._cert_buffer[consumed:].lstrip(', \n')
 
     async def handle_user_question(self, session_id: str, message: str, db: AsyncSession, context=None):
 
@@ -200,35 +317,33 @@ class WorkflowOrchestrator:
             print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("\n🎯 Running triage agent with handoffs...")
 
-            # Initialize certification streaming state on self
-            self._cert_buffer = ""
-            self._cert_decoder = json.JSONDecoder()
-            self._cert_array_stripped = False
-            buffering_cert = False
-            is_cancelled = False
-
             # summary_memory = context["summary"]
 
-            # Use true agent streaming
             result = Runner.run_streamed(
                 starting_agent=self.triage_agent,
                 input=message
             )
-            assistant_response = []
+
+            # Parsers
+            answer_streamer = AnswerStreamer()
+            flashcard_streamer = FlashcardStreamer()
+            global_buf = ""
+            text_response = []
+            is_cancelled = False
+            certification_response = []
             async for event in result.stream_events():
-          
+
                 # Check for cancellation
                 if context and context.stop_event.is_set():
                     print(f"🛑 Workflow cancelled by frontend.")
                     yield {"type": "cancelled", "message": "Response cancelled by User"}
-                    assistant_response.append("Response cancelled by User")
+                    text_response.append("Response cancelled by User")
                     is_cancelled = True
                     break
 
                 # 1) Agent handoff
                 if event.type == "agent_updated_stream_event":
                     current_agent = event.new_agent
-                    buffering_cert = (current_agent is self.certification_agent)
                     yield {"type": "processing", "response": f"Handing to {current_agent.name}"}
                     if current_agent is self.certification_agent:
                         yield {"type": "format", "response": "List"}
@@ -236,29 +351,35 @@ class WorkflowOrchestrator:
                         yield {"type": "format", "response": "Answer"}
                     continue
 
-                # 2) Tool use trigger (unchanged)
+                # 2) Tool use trigger
                 if event.type == "run_item_stream_event" and event.name == "tool_called":
                     item = event.item
                     tool = item.raw_item.name
                     yield {"type": "processing", "response": f"Performing {tool}"}
                     continue
 
-                # 3) Stream or buffer certification output
-                if event.type == "raw_response_event":
-                    data = event.data
-                    if isinstance(data, ResponseTextDeltaEvent):
-                        chunk = data.delta
-                        if buffering_cert:
-                            for obj in self._extract_cert_objs(chunk):
-                                yield {"type": "certification", "response": obj}
-                                assistant_response.append(obj)
-                        else:
-                            yield {"type": "summary_chunk", "response": chunk}
-                            assistant_response.append(chunk)
+                # 3) Stream ONLY inside "answer" string and "flashcards" array
+                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
+                    chunk = event.data.delta
+                    prev_len = len(global_buf)
+                    global_buf += chunk
+
+                    # Answer chunks
+                    for txt in answer_streamer.feed(global_buf, prev_len):
+                        yield {"type": "answer_chunk", "response": txt}
+                        text_response.append(txt)
+
+                    # Flashcards
+                    for card in flashcard_streamer.feed(global_buf, prev_len, chunk):
+                        yield {"type": "flashcard", "response": card}
+                        certification_response.append(card)
+
                     continue
-            if not buffering_cert:
-                assistant_response = "".join(assistant_response) 
-            assistant_message_obj = await store_message_db(session_id, str(assistant_response), db, "assistant", reply_to=user_message_id, is_cancelled = is_cancelled)
+
+            #Save the finalized message
+            if not certification_response:
+                certification_response = None
+            assistant_message_obj = await store_message_db(session_id, "".join(text_response), db, "assistant", certifications=certification_response,reply_to=user_message_id, is_cancelled = is_cancelled)
             yield {"type": "completed", "response": assistant_message_obj}
             return
 
@@ -268,6 +389,7 @@ class WorkflowOrchestrator:
             print(f"🔍 Full traceback: {traceback.format_exc()}")
             yield {"error": str(e)}
             return
+        
     async def compliance_research(self, search_queries: list[str]):
         """
         Specialized workflow for compliance requests.
@@ -376,4 +498,14 @@ class WorkflowOrchestrator:
             
         except Exception as e:
             print(f"❌ domain web search failed: {e}")
-            return {}       
+            return {}
+        
+    async def prepare_flashcard(self, certification_name:str, context: str = None):
+        agent = FlashcardAgent(self)
+
+        result = await Runner.run(
+            agent,
+            input=str({"certification_name": certification_name, "context": context}),
+        )
+
+        return str(result.final_output)

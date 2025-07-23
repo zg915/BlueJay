@@ -16,4 +16,5 @@ __all__ = [
     "function_tool",
     "CertificationAgent",
     "AnswerAgent"
+    "FlashcardAgent"
 ] 
