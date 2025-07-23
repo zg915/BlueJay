@@ -143,7 +143,36 @@ async def add_chat_message(
     # 5) Commit and refresh
     await session.commit()
     await session.refresh(msg)
-    return jsonable_encoder(msg)
+    return jsonable_encoder(msINSERT INTO chat_messages (
+        message_id,
+        session_id,
+        role,
+        content,
+        timestamp,
+        message_order,
+        is_summarized,
+        reply_to,
+        type,
+        is_cancelled,
+        cancellation_timestamp,
+        cancellation_reason,
+        certifications
+      )
+    VALUES (
+        'message_id:character varying',
+        'session_id:character varying',
+        'role:character varying',
+        'content:text',
+        'timestamp:timestamp with time zone',
+        message_order:integer,
+        is_summarized:boolean,
+        'reply_to:character varying',
+        'type:character varying',
+        is_cancelled:boolean,
+        'cancellation_timestamp:timestamp without time zone',
+        'cancellation_reason:text',
+        'certifications:jsonb'
+      );g)
 
 
 async def get_last_n_messages(session: AsyncSession, session_id: str, n: int = 9):
