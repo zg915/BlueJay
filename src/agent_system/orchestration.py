@@ -9,9 +9,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Agent, handoff, ItemHelpers, Runner
 from openai.types.responses import ResponseTextDeltaEvent, ResponseFunctionCallArgumentsDeltaEvent
-from .agents import CertificationAgent, AnswerAgent, FlashcardAgent
-from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
-from src.config.output_structure import Reason_Structure
+from .agents import CertificationAgent, AnswerAgent, FlashcardAgent, TriageAgent
 from src.agent_system.guardrails import validate_input, input_moderation, output_moderation
 from src.agent_system.internal import (
     store_message_db, store_final_response_db, store_research_request_db,
@@ -114,8 +112,6 @@ def print_timing_table(task_results):
     print("=" * 80)
     print("💡 Parallel execution confirmed! All tasks started at nearly the same time.")
     print("=" * 80 + "\n")
-
-
 
 # -------- Minimal stream parsers --------
 class AnswerStreamer:
@@ -260,32 +256,21 @@ class FlashcardStreamer:
 class WorkflowOrchestrator:
     def __init__(self):
         print("🔧 Initializing WorkflowOrchestrator...")
-        #TODO: move it somewhere else?
-        def _print_reason(context, input):
-            print("\n\n\nreason of choosing the worflow: ", input, "\n\n\n")
-            pass
+        
         # Set the global orchestrator for tools to access
         from src.agent_system.tools.core import set_global_orchestrator
         set_global_orchestrator(self)
         
         # Initialize db as None - will be set during request processing
         self.db = None
+        
+        # Initialize specialized agents first
         self.certification_agent = CertificationAgent(self)
         self.answer_agent = AnswerAgent(self)
-        self.triage_agent = Agent(
-            name="Triage agent",
-            model="gpt-4o",
-            instructions=TRIAGE_AGENT_INSTRUCTION,
-            #TODO: handle the filter input
-            handoffs=[
-                handoff(self.certification_agent,
-                        input_type=Reason_Structure,
-                        on_handoff=_print_reason),
-                handoff(self.answer_agent,
-                        input_type=Reason_Structure,
-                        on_handoff=_print_reason)
-            ]
-        )
+        
+        # Initialize triage agent with handoffs to specialized agents
+        self.triage_agent = TriageAgent(self.certification_agent, self.answer_agent)
+        
         print("✅ WorkflowOrchestrator initialized successfully")
     
 
