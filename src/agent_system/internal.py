@@ -43,7 +43,7 @@ async def _perplexity_certification_search(query: str, domains: list = None):
         "temperature": 0.1,
         "response_format": {
             "type": "json_schema",
-            "json_schema": {"schema": Flashcards_Structure.schema()}
+            "json_schema": {"schema": Flashcards_Structure.model_json_schema()}
         }
     }
     if domains:

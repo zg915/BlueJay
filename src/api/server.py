@@ -7,7 +7,6 @@ from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.database import get_async_session
-from src.database.services import db_service
 from .endpoints import (
     chat_stream, chat_simple, health_check, 
     create_session, get_session_history,
@@ -39,7 +38,7 @@ app.add_middleware(
 async def get_db():
     """Get database session with error handling"""
     try:
-        async for session in db_service.get_session():
+        async for session in get_async_session():
             yield session
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Database connection error: {str(e)}")

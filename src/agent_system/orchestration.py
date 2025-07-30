@@ -20,98 +20,7 @@ import asyncio
 import re
 
 
-#TODO: move it somewhere else?
-from pydantic import BaseModel, Field
-from src.config.output_structure import Flashcards_Structure
-class ReasonArgs(BaseModel):
 
-    reason: str = Field(
-        ...,
-        description=(
-            "A concise and clear one sentence reason of why choosing this handoff"
-        )
-    )
-
-def log_with_time(message):
-    """Log message with timestamp"""
-    timestamp = datetime.now().strftime('%H:%M:%S.%f')[:-3]
-    print(f"[{timestamp}] {message}")
-
-async def timed_task(name, coro):
-    """Wrapper to time async tasks and log start/end times"""
-    start = time.time()
-    start_time = datetime.now()
-    log_with_time(f"🚀 START {name}")
-    
-    try:
-        result = await coro
-        end = time.time()
-        end_time = datetime.now()
-        duration = end - start
-        log_with_time(f"✅ END {name} (duration: {duration:.2f}s)")
-        
-        return {
-            "name": name,
-            "start": start_time,
-            "end": end_time,
-            "duration": duration,
-            "result": result,
-            "status": "success"
-        }
-    except Exception as e:
-        end = time.time()
-        end_time = datetime.now()
-        duration = end - start
-        log_with_time(f"❌ ERROR {name} (duration: {duration:.2f}s): {e}")
-        
-        return {
-            "name": name,
-            "start": start_time,
-            "end": end_time,
-            "duration": duration,
-            "result": None,
-            "status": "error",
-            "error": str(e)
-        }
-
-def print_timing_table(task_results):
-    """Print a formatted table of task timings"""
-    print("\n" + "=" * 80)
-    print("📊 PARALLEL TASK TIMING TABLE")
-    print("=" * 80)
-
-    table_data = []
-    for task_result in task_results:
-        if isinstance(task_result, dict):
-            start_str = task_result["start"].strftime('%H:%M:%S.%f')[:-3]
-            end_str = task_result["end"].strftime('%H:%M:%S.%f')[:-3]
-            duration_str = f"{task_result['duration']:.2f}s"
-            status = task_result["status"]
-            table_data.append([
-                task_result["name"],
-                start_str,
-                end_str,
-                duration_str,
-                status
-            ])
-        else:
-            table_data.append([
-                f"Task-{len(table_data)+1}",
-                "-",
-                "-",
-                "-",
-                "ERROR"
-            ])
-
-    if table_data:
-        print(f"{'Task Name':<25} {'Start Time':<15} {'End Time':<15} {'Duration':<10} {'Status':<10}")
-        print("-" * 80)
-        for row in table_data:
-            print(f"{row[0]:<25} {row[1]:<15} {row[2]:<15} {row[3]:<10} {row[4]:<10}")
-
-    print("=" * 80)
-    print("💡 Parallel execution confirmed! All tasks started at nearly the same time.")
-    print("=" * 80 + "\n")
 
 # -------- Minimal stream parsers --------
 class AnswerStreamer:
@@ -387,21 +296,20 @@ class WorkflowOrchestrator:
         try:
             #TODO: change to full queries
             for query in search_queries[:1]:
-                tasks.append(timed_task(f"Domain_web_search: {query}", self.web_search(query, use_domain = True)))
-                tasks.append(timed_task(f"web_search: {query}", self.web_search(query, use_domain = False)))
+                print(f"🚀 Starting Domain_web_search: {query}")
+                print(f"🚀 Starting web_search: {query}")
+                tasks.append(self.web_search(query, use_domain = True))
+                tasks.append(self.web_search(query, use_domain = False))
                 #TODO: add the RAG
-                # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
+                # tasks.append(self._lookup_past_certifications(query))
+            
+            start_time = time.time()
             all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
-            print_timing_table(all_task_results)
+            total_duration = time.time() - start_time
+            print(f"✅ All parallel tasks completed in {total_duration:.2f}s")
 
-            # Flatten and collect results, tagging with source query
-            all_results = {}
-            for idx, task_result in enumerate(all_task_results):
-                if isinstance(task_result, dict) and task_result.get("status") == "success":
-                    all_results["answer_{0}".format(idx)] = task_result["result"]
-
-            print("📤 Returning raw results for LLM deduplication and structuring...")
-            return all_results
+            print("📤 Returning all results (including errors) for agent processing...")
+            return all_task_results
         except Exception as e:
             print(f"❌ Error in compliance_research: {e}")
     
@@ -417,39 +325,20 @@ class WorkflowOrchestrator:
         try:
             #TODO: change back to full queries
             for query in search_queries[:1]:
-                tasks.append(timed_task(f"Domain_web_search: {query}", self.certification_web_search(query, use_domain = True)))
-                tasks.append(timed_task(f"web_search: {query}", self.certification_web_search(query, use_domain = False)))
+                print(f"🚀 Starting Domain_web_search: {query}")
+                print(f"🚀 Starting web_search: {query}")
+                tasks.append(self.certification_web_search(query, use_domain = True))
+                tasks.append(self.certification_web_search(query, use_domain = False))
                 #TODO: add the RAG
-                # tasks.append(timed_task(f"RAG: {query}", self._lookup_past_certifications(query)))
+                # tasks.append(self._lookup_past_certifications(query))
+            
+            start_time = time.time()  
             all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
-            print_timing_table(all_task_results)
+            total_duration = time.time() - start_time
+            print(f"✅ All parallel tasks completed in {total_duration:.2f}s")
 
-            # Flatten and collect results, tagging with source query
-            all_results = {}
-            for idx, task_result in enumerate(all_task_results):
-                if isinstance(task_result, dict) and task_result.get("status") == "success":
-                    all_results["answer_{0}".format(idx)] = task_result["result"]
-            # TODO: delete the following, or figure out good ways to store
-            # for idx, task_result in enumerate(all_task_results):
-            #     if isinstance(task_result, dict) and task_result.get("status") == "success":
-            #         # Each result is a list of dicts (certifications)
-            #         # Figure out which query this result came from
-            #         query_index = idx // 3
-            #         source_query = search_queries[query_index] if query_index < len(search_queries) else None
-            #         for item in task_result.get("result", []):
-            #             # Attach the originating query for traceability
-            #             if isinstance(item, dict):
-            #                 item['source_query'] = source_query
-            #             all_results.append(item)
-            #     else:
-            #         print(f"❌ Task {idx} failed or returned no results.")
-
-            # print(f"✅ Combined {len(all_results)} total certification results from all sources/queries")
-            # Optionally store results, etc.
-            # await self._store_certification_result(str(all_results), search_queries, db)
-
-            print("📤 Returning raw certification results for LLM deduplication and structuring...")
-            return all_results
+            print("📤 Returning all results (including errors) for agent processing...")
+            return all_task_results
         except Exception as e:
             print(f"❌ Error in search_relevant_certification: {e}")
 
