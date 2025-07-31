@@ -6,10 +6,9 @@ load_dotenv()
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.database import get_async_session
+from src.services import get_async_session
 from .endpoints import (
     chat_stream, chat_simple, health_check, 
-    create_session, get_session_history,
     ChatRequest, SessionRequest
 )
 from src.agent_system.session_manager import workflow_sessions
@@ -63,16 +62,6 @@ async def simple_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 async def health():
     """Health check endpoint"""
     return await health_check()
-
-@app.post("/sessions")
-async def create_new_session(request: SessionRequest, db: AsyncSession = Depends(get_db)):
-    """Create a new chat session"""
-    return await create_session(request, db)
-
-@app.get("/sessions/{session_id}/history")
-async def get_history(session_id: str, db: AsyncSession = Depends(get_db)):
-    """Get chat history for a session"""
-    return await get_session_history(session_id, db)
 
 @app.get("/")
 async def root():

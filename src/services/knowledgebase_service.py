@@ -1,3 +1,6 @@
+"""
+Knowledge base service functions - Final implementation
+"""
 import json
 import os
 import time
@@ -12,7 +15,7 @@ from weaviate.connect import ConnectionParams, ProtocolParams
 from pydantic import BaseModel
 from typing import List, Dict
 
-async def domain_search_kb(query: str):
+async def kb_domain_search(query: str):
     weaviate_api_key   = os.getenv("WEAVIATE_API_KEY")
     endpoint  = os.getenv("WEAVIATE_URL") # HTTPS if you add TLS
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -158,4 +161,46 @@ async def domain_search_kb(query: str):
     # Collect domains
     domain_list = [obj.properties["domain"] for obj in response.objects]
     client.close()
-    return domain_list   
+    return domain_list
+
+async def kb_certification_search(query: str):
+    weaviate_api_key   = os.getenv("WEAVIATE_API_KEY")
+    endpoint  = os.getenv("WEAVIATE_URL") # HTTPS if you add TLS
+
+    # VoyageAI API key and client
+    VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
+    voyage_client = voyageai.Client(VOYAGE_API_KEY)
+
+
+    client = WeaviateClient(
+        connection_params=ConnectionParams(
+            http=ProtocolParams(host=endpoint, port=8080, secure=False),
+            grpc=ProtocolParams(host=endpoint, port=50051, secure=False)
+        ),
+        auth_client_secret=AuthApiKey(weaviate_api_key),
+    )
+    client.connect()
+
+    whitelist = client.collections.get("Compliance_Artifacts")
+
+    # Build BM25 query: natural‑language sentence + facet keywords
+    # bm25_query = f"{query} " + " ".join(sum(property_keywords.values(), []))
+    bm25_query = query
+    # bm25_props = list(property_keywords.keys())
+
+    response = whitelist.query.hybrid(
+        query=bm25_query,
+        # vector=vector_embed,
+        alpha=0.5,
+        limit=5,
+        # query_properties=bm25_props,
+        # return_properties=["domain"],
+        return_metadata=wq.MetadataQuery(score=True),
+    )
+    print(response)
+
+    client.close()
+    return response
+
+async def kb_certification_update():
+    pass

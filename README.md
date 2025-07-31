@@ -38,10 +38,21 @@ BlueJay is an intelligent backend system that routes user queries to specialized
 BlueJay/
 ├── src/
 │   ├── agent_system/          # Agent definitions, orchestration, session manager
+│   │   ├── agents/           # Specialized agents (Certification, Answer, Flashcard, Triage)
+│   │   ├── orchestration/    # Main orchestrator, operations, and streaming
+│   │   │   ├── orchestration.py    # Main workflow orchestrator
+│   │   │   ├── operations.py       # Business logic operations
+│   │   │   └── streaming.py        # Streaming utilities
+│   │   ├── tools/            # Function tools for agents
+│   │   └── guardrails/       # Input validation and moderation
 │   ├── api/                   # FastAPI endpoints and server
 │   ├── config/                # Prompts and output schemas
-│   ├── database/              # Models and async services
-│   ├── memory/                # Conversation memory/context
+│   ├── services/              # Self-contained service modules (organized by data source)
+│   │   ├── database_service.py     # Simplified database operations
+│   │   ├── database_service_archive.py # Archived unused database functions
+│   │   ├── perplexity_service.py   # Perplexity API integration
+│   │   ├── knowledgebase_service.py # Knowledge base/Weaviate operations
+│   │   └── models.py               # SQLAlchemy database models
 │   └── tests/                 # Test files
 ├── requirements.txt           # Python dependencies
 ├── README.md                  # This file
@@ -130,7 +141,53 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
 - **Triage Agent:** Classifies user queries and hands off to the appropriate specialized agent.
 - **CertificationAgent:** Handles certification/compliance queries, streams each certification as soon as available.
 - **AnswerAgent:** Handles general Q&A, streams formatted answers.
+- **FlashcardAgent:** Generates structured flashcards for certifications.
 - **Orchestrator:** Manages agent handoff, streaming, and cancellation.
+
+## 🏛️ Architecture Overview
+
+BlueJay follows a clean, modular architecture with clear separation of concerns:
+
+### Services Layer (`src/services/`)
+- **Self-contained modules** organized by data source (database, perplexity, knowledgebase)
+- **Plain functions** for simplicity and testability  
+- **No internal dependencies** - each service is the final destination for its functionality
+- **Simplified and optimized** - unused functions archived, internal redirects eliminated
+- **Direct implementations** - moved from wrapper pattern to actual functionality
+
+### Operations Layer (`src/agent_system/orchestration/operations.py`)
+- **Business logic functions** that orchestrate multiple service calls
+- **Workflow coordination** for complex multi-step processes
+- **Plain functions** that combine services to achieve business goals
+
+### Orchestration Layer (`src/agent_system/orchestration/orchestration.py`)
+- **Main workflow coordinator** that manages agent interactions
+- **Streaming and session management**
+- **Error handling and cancellation logic**
+
+---
+
+## 🔧 Recent Architecture Improvements
+
+The BlueJay codebase has been significantly refactored to improve maintainability and eliminate complexity:
+
+### Function Organization Refactoring
+- **Eliminated `internal.py`** - Removed the redirect wrapper pattern that added unnecessary complexity
+- **Services by Data Source** - Functions organized into `database_service.py`, `perplexity_service.py`, and `knowledgebase_service.py`
+- **Self-Contained Services** - Each service contains full implementation with no further redirects
+- **Database Simplification** - Reduced active database service by 48% (3,494 bytes vs 6,716 bytes archived)
+
+### Cleanup and Optimization
+- **Removed Obsolete Directories**: `src/knowledgebase/`, `src/memory/`, `src/database/`
+- **Archived Unused Functions**: 64% of database functions moved to `database_service_archive.py`
+- **Consolidated Models**: Moved `models.py` into services directory for better organization
+- **Direct Function Calls**: Eliminated internal function redirects for better performance
+
+### Benefits
+- **Reduced Complexity**: Clear function ownership and no redirect chains
+- **Better Maintainability**: Functions organized by their data source
+- **Improved Performance**: Direct function calls without wrappers
+- **Easier Testing**: Self-contained services with clear boundaries
 
 ---
 
@@ -207,22 +264,6 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
 - **Verify environment variables** are set correctly
 - **Test database connection** with `python test_db_connection.py`
 - **Use `/health` endpoint** to verify server is running
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes
-4. Push to your branch
-5. Open a Pull Request
-
----
-
-## 📝 License
-
-This project is licensed under the MIT License.
 
 ---
 

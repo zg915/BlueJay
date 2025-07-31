@@ -1,24 +1,16 @@
-# NOTE: All @function_tool and agent-callable functions have been moved to tools/core.py.
-# This file now contains only internal helpers and non-tool functions.
-
+"""
+Perplexity API service functions
+"""
 import os
-import requests
-import asyncio
-import aiohttp
-from src.memory.memory_service import get_recent_context as memory_get_recent_context, store_context as memory_store_context
-from src.database.services import add_chat_message, create_research_request
-from src.knowledgebase.knowledgebase_service import domain_search_kb
-from src.config.prompts import PERPLEXITY_CERTIFICATION_PROMPT, PERPLEXITY_GENERAL_PROMPT
-from openai import OpenAI
 import json
-import re
-from typing import List, Dict, Any, Optional
-from pydantic import BaseModel, RootModel
+import aiohttp
+from src.config.prompts import PERPLEXITY_CERTIFICATION_PROMPT, PERPLEXITY_GENERAL_PROMPT
 from src.config.output_structure import Flashcards_Structure
 
-async def _perplexity_certification_search(query: str, domains: list = None):
+
+async def perplexity_certification_search(query: str, domains: list = None):
     """
-    Internal implementation of Perplexity domain search using structured output.
+    Perplexity domain search using structured output for certifications.
     """
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
@@ -73,9 +65,9 @@ async def _perplexity_certification_search(query: str, domains: list = None):
         return []
 
 
-async def _perplexity_search(query: str, domains: list = None):
+async def perplexity_search(query: str, domains: list = None):
     """
-    Internal implementation of Perplexity domain search.
+    Perplexity domain search for general queries.
     """
     api_key = os.getenv("PERPLEXITY_API_KEY")
     if not api_key:
@@ -119,24 +111,3 @@ async def _perplexity_search(query: str, domains: list = None):
     except Exception as e:
         print(f"❌ Perplexity API exception: {e}")
         return []
-
-# Internal async functions for DB operations (not decorated)
-async def store_message_db(session_id: str, content: str, db, role: str, certifications: list = None, reply_to: str = None, type: str = "text", is_cancelled: bool = False):
-    return await add_chat_message(db, session_id=session_id, content=content, certifications=certifications, role=role, reply_to=reply_to, type=type, is_cancelled=is_cancelled)
-
-async def get_recent_context_db(db, session_id: str, chat_length: int):
-    return await memory_get_recent_context(db, session_id, chat_length)
-
-async def store_final_response_db(user_id: str, session_id: str, response: str, db):
-    # Final response storage removed - this function is now a no-op
-    return True
-
-async def store_research_request_db(session_id: str, question: str, result: str, db, workflow_type: str, message_id: str = None):
-    return await create_research_request(db, session_id, question, workflow_type, message_id=message_id)
-
-async def store_context_db(db, session_id: str):
-    return await memory_store_context(db, session_id)
-
-async def _domain_search_kb(query: str):
-    return await domain_search_kb(query)
-

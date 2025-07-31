@@ -14,3 +14,5 @@ starlette>=0.37.0
 openai-agents
 aiohttp
 ijson
+voyageai
+weaviate-client

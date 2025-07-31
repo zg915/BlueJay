@@ -1,7 +1,7 @@
 """
 AnswerAgent definition
 """
-from .base import Agent
+from agents import Agent
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.prompts import ANSWER_AGENT_INSTRUCTION, ANSWER_AGENT_DESCRIPTION
 from agents import ModelSettings

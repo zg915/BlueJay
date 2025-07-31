@@ -4,17 +4,14 @@ FastAPI endpoints for OpenAI Agents SDK
 
 import json
 import uuid
+import asyncio
 from datetime import datetime
 from typing import Dict, Any, Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
-import json
-import asyncio
-from src.agent_system.orchestration import WorkflowOrchestrator
-from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.agent_system.orchestration import WorkflowOrchestrator
 from src.agent_system.session_manager import workflow_sessions
 
 
@@ -119,65 +116,3 @@ async def health_check():
         status="healthy",
         message="Agentic workflow system is running"
     )
-
-# Session management endpoints
-async def create_session(request: SessionRequest, db: AsyncSession):
-    """
-    Create a new chat session
-    """
-    print(f"\n➕ Creating new session")
-    print(f"👤 User: {request.user_id}")
-    
-    try:
-        from src.database.services import create_chat_session
-        
-        # Create session in database
-        chat_session = await create_chat_session(db, request.user_id)
-        print(f"✅ Session created with ID: {chat_session.session_id}")
-        
-        return SessionResponse(
-            session_id=chat_session.session_id,
-            user_id=request.user_id
-        )
-    except Exception as e:
-        print(f"❌ Error creating session: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to create session: {str(e)}")
-
-async def get_session_history(session_id: str, db: AsyncSession):
-    """
-    Get chat history for a session
-    """
-    print(f"\n📚 Getting session history")
-    print(f"💬 Session: {session_id}")
-    
-    try:
-        from src.database.services import get_chat_session, get_last_n_messages
-        
-        # Get the session
-        session = await get_chat_session(db, session_id)
-        print(f"✅ Session found")
-        
-        # Get the last 50 messages for this session
-        messages = await get_last_n_messages(db, session_id, 50)
-        print(f"📝 Found {len(messages)} messages")
-        
-        # Format messages for response
-        formatted_messages = []
-        for msg in messages:
-            formatted_messages.append({
-                "id": msg.message_id,
-                "content": msg.content,
-                "timestamp": msg.timestamp.isoformat(),
-                "role": msg.role,
-                "message_order": msg.message_order
-            })
-        
-        return {
-            "session_id": session_id,
-            "user_id": session.user_id,
-            "created_at": session.created_at.isoformat(),
-            "messages": formatted_messages
-        }
-    except Exception as e:
-        print(f"❌ Error getting session history: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get session history: {str(e)}") 

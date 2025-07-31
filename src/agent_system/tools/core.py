@@ -34,8 +34,8 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
             "Orchestrator not set. Call set_certification_workflow_orchestrator first."
         )
 
-    # db = getattr(global_orchestrator, "db", None)
-    return await global_orchestrator.search_relevant_certification(search_queries)
+    from ..orchestration import operations
+    return await operations.search_relevant_certification(search_queries)
 
 #used by answer agent
 @function_tool
@@ -52,7 +52,8 @@ async def web_search(search_query: str):
         raise RuntimeError(
             "Orchestrator not set. Call set_certification_workflow_orchestrator first."
         )
-    return await global_orchestrator.web_search(search_query)
+    from ..orchestration import operations
+    return await operations.web_search(search_query)
 
 #used by answer agent
 @function_tool
@@ -67,7 +68,8 @@ async def compliance_research(search_queries: list[str]):
     """
     if global_orchestrator is None:
         raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
-    return await global_orchestrator.compliance_research(search_queries)
+    from ..orchestration import operations
+    return await operations.compliance_research(search_queries)
 
 #used by flashcard agent
 @function_tool
@@ -82,7 +84,8 @@ async def flashcard_web_search(search_query: str):
     """
     if global_orchestrator is None:
         raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
-    return await global_orchestrator.certification_web_search(search_query)
+    from ..orchestration import operations
+    return await operations.certification_web_search(search_query)
 
 # used by answer agent
 @function_tool
@@ -100,4 +103,5 @@ async def prepare_flashcard(certification_name:str, context: str = None):
     """
     if global_orchestrator is None:
         raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
-    return await global_orchestrator.prepare_flashcard(certification_name, context)
+    from ..orchestration import operations
+    return await operations.prepare_flashcard(certification_name, context, global_orchestrator)
