@@ -188,29 +188,80 @@ async def kb_compliance_lookup(query: str):
     voyage_client = voyageai.Client(VOYAGE_API_KEY)
 
     client = _get_weaviate_client()
-    print("🍎 Connected to Weaviate")
     whitelist = client.collections.get("Compliance_Artifacts")
 
-    #TODO: create an openai call to polish the search query
-    # Build BM25 query: natural‑language sentence + facet keywords
-    # bm25_query = f"{query} " + " ".join(sum(property_keywords.values(), []))
-    bm25_query = query
-    # bm25_props = list(property_keywords.keys())
+    # Provide KB schema context to OpenAI to optimize the search query
+    system_prompt = """
+    You are “QueryRefiner-Pro,” a specialist that transforms messy, natural-language user questions into crisp,
+high-recall BM25 search strings for our **Compliance_Artifacts** vector database.
 
+========================================
+KNOWLEDGE-BASE CONTEXT
+----------------------------------------
+Indexed text fields
+  • name               – official scheme title  
+  • aliases            – acronyms / alternate names  
+  • legal_reference    – directive / standard number  
+  • domain_tags        – one of {product, safety, environment, csr, other}  
+  • scope_tags         – product families or industry sectors  
+  • overview           – two-sentence summary of each scheme  
+  • full_description   – 80–150-word narrative with purpose, scope, use cases  
+
+========================================
+REFINING RULES
+----------------------------------------
+1. **Keep only search-worthy tokens.**
+   • nouns → product family, sector, country/region
+   • verbs/adjectives → drop unless they narrow legal scope (“export”, “import”, “hazardous”)
+2. **Generalise product SKUs to industry nouns.**
+   • lipstick, mascara → cosmetics
+   • phone charger → electronics
+3. **Normalise geography.**
+   • “US”, “USA”, “American” → “United States”
+   • If EU member mentioned → add “EU/EEA”
+4. **No guessing certifications.**
+   • Do NOT invent scheme names, aliases, or tags.
+   • Just polish the user’s intent into keywords.
+5. **Output exactly one line** – the final query string, no quotes, no JSON, no commentary.
+
+========================================
+EXAMPLES
+----------------------------------------
+USER:  “certifications to export lipstick to US”
+OUTPUT: `export cosmetics United States`
+
+USER:  “needed docs for selling smart toys in EU”
+OUTPUT: `smart toys EU/EEA`
+
+USER:  “environment regs for lithium batteries china”
+OUTPUT: `lithium batteries environment China Mainland`
+"""
+    # 2a. Refine the search query using OpenAI
+    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+    openai.api_key = OPENAI_API_KEY
+
+    resp = openai.chat.completions.create(
+        model="gpt-4o",
+        temperature=0,
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": query},
+        ],
+    )
+    bm25_query = resp.choices[0].message.content.strip().strip('"')
+    print(f"🍎 Query: {bm25_query}")
     response = whitelist.query.hybrid(
         query=bm25_query,
         # vector=vector_embed,
         alpha=0.5,
         limit=5,
         # query_properties=bm25_props,
-        # return_properties=["domain"],
         return_metadata=wq.MetadataQuery(score=True),
     )
     # Print only the names from the response objects
     for obj in response.objects:
         if hasattr(obj, 'properties') and 'name' in obj.properties:
-            print(f"Found: {obj.properties['name']}")
-
+            print(f"Found: {obj.properties['name']} (Score: {obj.metadata.score})")
     client.close()
     return response
 
