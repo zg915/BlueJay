@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.config.prompts import ANSWER_AGENT_INSTRUCTION, ANSWER_AGENT_DESCRIPTION
 from agents import ModelSettings
 from src.agent_system.tools.core import compliance_research, web_search, prepare_flashcard
-from src.config.output_structure import Answer_Structure
+from src.config.schemas import Answer_Structure
 from pydantic import BaseModel
 from typing import Optional
 

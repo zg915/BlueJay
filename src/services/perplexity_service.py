@@ -5,7 +5,7 @@ import os
 import json
 import aiohttp
 from src.config.prompts import PERPLEXITY_CERTIFICATION_PROMPT, PERPLEXITY_GENERAL_PROMPT
-from src.config.output_structure import Flashcards_Structure
+from src.config.schemas import Flashcards_Structure
 
 
 async def perplexity_certification_search(query: str, domains: list = None):

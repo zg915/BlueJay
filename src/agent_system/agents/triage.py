@@ -3,7 +3,7 @@ TriageAgent definition - Routes user queries to appropriate specialized agents
 """
 from agents import Agent, handoff
 from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
-from src.config.output_structure import Reason_Structure
+from src.config.schemas import Reason_Structure
 
 class TriageAgent(Agent):
     def __init__(self, certification_agent, answer_agent):

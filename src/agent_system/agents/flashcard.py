@@ -6,7 +6,7 @@ from src.agent_system.tools.core import flashcard_web_search
 from src.config.prompts import FLASHCARD_AGENT_INSTRUCTION, FLASHCARD_AGENT_DESCRIPTION
 from pydantic import BaseModel, Field
 from typing import Optional
-from src.config.output_structure import Flashcard_Structure
+from src.config.schemas import Flashcard_Structure
 
 
 class FlashcardAgent(Agent):

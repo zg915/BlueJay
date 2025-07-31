@@ -214,7 +214,7 @@ The BlueJay codebase has been significantly refactored to improve maintainabilit
   - `src/agent_system/agents/certification.py` — `CertificationAgent` class
   - `src/agent_system/orchestration.py` — Certification streaming logic in `handle_user_question` and `_extract_cert_objs`
   - `src/config/prompts.py` — `CERTIFICATION_AGENT_INSTRUCTION` (Prompt for certification agent)
-  - `src/config/output_structure.py` — `Flashcards_Structure` (Output schema)
+  - `src/config/schemas.py` — `Flashcards_Structure` (Output schema)
 
 ### 3. AnswerAgent
 - **Role:** Handles general compliance, regulatory, and informational queries.
@@ -254,7 +254,7 @@ The BlueJay codebase has been significantly refactored to improve maintainabilit
   - Implement in `src/agent_system/tools/`
   - Register with agents as needed
 - **Customize prompts/output:**
-  - Edit `src/config/prompts.py` and `src/config/output_structure.py`
+  - Edit `src/config/prompts.py` and `src/config/schemas.py`
 
 ---
 
