@@ -9,7 +9,7 @@ from typing import List
 from src.config.schemas import List_Structure
 
 class CertificationAgent(Agent):
-    def __init__(self, orchestrator):
+    def __init__(self):
         super().__init__(
             name="Certification Agent",
             model="gpt-4.1", 
@@ -18,5 +18,4 @@ class CertificationAgent(Agent):
             tools=[search_relevant_certification],
             model_settings=ModelSettings(tool_choice="search_relevant_certification"),
             output_type=List_Structure
-        )
-        self.orchestrator = orchestrator 
+        ) 

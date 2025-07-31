@@ -2,7 +2,7 @@
 """
 SQLAlchemy models for chat messages, sessions, research requests, and final responses.
 """
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import declarative_base
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Boolean, JSON
 from sqlalchemy.orm import relationship
 import datetime

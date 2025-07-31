@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 class AnswerAgent(Agent):
-    def __init__(self, orchestrator):
+    def __init__(self):
         super().__init__(
             name="Answer Agent",
             model="gpt-4o",
@@ -20,4 +20,3 @@ class AnswerAgent(Agent):
             tools=[prepare_flashcard, compliance_research, web_search],
             output_type=Answer_Structure
         )
-        self.orchestrator = orchestrator

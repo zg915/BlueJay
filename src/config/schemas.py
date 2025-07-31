@@ -1,5 +1,5 @@
 from typing import List, Optional, Union, Literal
-from pydantic import BaseModel, Field, HttpUrl, field_validator, RootModel
+from pydantic import BaseModel, Field, field_validator, RootModel
 from datetime import datetime
 
 class Reason_Structure(BaseModel):
@@ -42,7 +42,7 @@ class Flashcard_Structure(BaseModel):
     )
     classifications: List[ClassificationTag] = Field(
         ...,
-        min_items=1, max_items=5,
+        min_length=1, max_length=5,
         description="Overlapping tags from the allowed set above (1–3 recommended); aids filtering"
     )
     mandatory: bool = Field(
@@ -169,9 +169,9 @@ class ComplianceArtifact(BaseModel):
         description="Bullet steps or URL on how to obtain or renew (≤300 chars)"
     )
 
-    official_link: HttpUrl = Field(
+    official_link: str = Field(
         ...,
-        description="Canonical HTTPS URL of the official scheme documentation"
+        description="Canonical HTTPS URL of the official scheme documentation (must be valid URL)"
     )
 
     updated_at: datetime = Field(
@@ -179,7 +179,7 @@ class ComplianceArtifact(BaseModel):
         description="UTC timestamp when this record was last reviewed"
     )
 
-    sources: List[HttpUrl] = Field(
+    sources: List[str] = Field(
         ...,
-        description="List of all source URLs or PDFs used to populate this record (first must be official_link)"
+        description="List of all source URLs or PDFs used to populate this record (first must be official_link, all must be valid URLs)"
     )

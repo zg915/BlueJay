@@ -4,20 +4,46 @@ Knowledge base service functions - Final implementation
 import json
 import os
 import time
+from datetime import datetime, timezone
 
 import openai
 import voyageai
 from dotenv import load_dotenv
+import weaviate
 from weaviate import WeaviateClient
 from weaviate.auth import AuthApiKey
 from weaviate.classes import query as wq
 from weaviate.connect import ConnectionParams, ProtocolParams
 from pydantic import BaseModel
 from typing import List, Dict
+from src.config.schemas import ComplianceArtifact
 
-async def kb_domain_search(query: str):
-    weaviate_api_key   = os.getenv("WEAVIATE_API_KEY")
-    endpoint  = os.getenv("WEAVIATE_URL") # HTTPS if you add TLS
+def _get_weaviate_client():
+    """Get connected Weaviate client using environment configuration.
+    
+    Returns:
+        WeaviateClient: Connected Weaviate client instance
+        
+    Raises:
+        ValueError: If required environment variables are missing
+    """
+    weaviate_api_key = os.getenv("WEAVIATE_API_KEY")
+    endpoint = os.getenv("WEAVIATE_URL")
+    
+    if not weaviate_api_key or not endpoint:
+        raise ValueError("Missing WEAVIATE_API_KEY or WEAVIATE_URL environment variables")
+    
+    client = WeaviateClient(
+        connection_params=ConnectionParams(
+            http=ProtocolParams(host=endpoint, port=8080, secure=False),
+            grpc=ProtocolParams(host=endpoint, port=50051, secure=False)
+        ),
+        auth_client_secret=AuthApiKey(weaviate_api_key),
+    )
+    client.connect()
+    return client
+
+async def kb_domain_lookup(query: str):
     OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
     # Initialize OpenAI
@@ -133,14 +159,7 @@ async def kb_domain_search(query: str):
     property_keywords = {k: v for k, v in plan.keywords.items() if v}
 
     # Weaviate client
-    client = WeaviateClient(
-        connection_params=ConnectionParams(
-            http=ProtocolParams(host=endpoint, port=8080, secure=False),
-            grpc=ProtocolParams(host=endpoint, port=50051, secure=False)
-        ),
-        auth_client_secret=AuthApiKey(weaviate_api_key),
-    )
-    client.connect()
+    client = _get_weaviate_client()
 
     whitelist = client.collections.get("URL_Whitelist")
 
@@ -163,26 +182,16 @@ async def kb_domain_search(query: str):
     client.close()
     return domain_list
 
-async def kb_certification_search(query: str):
-    weaviate_api_key   = os.getenv("WEAVIATE_API_KEY")
-    endpoint  = os.getenv("WEAVIATE_URL") # HTTPS if you add TLS
-
+async def kb_compliance_lookup(query: str):
     # VoyageAI API key and client
     VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
     voyage_client = voyageai.Client(VOYAGE_API_KEY)
 
-
-    client = WeaviateClient(
-        connection_params=ConnectionParams(
-            http=ProtocolParams(host=endpoint, port=8080, secure=False),
-            grpc=ProtocolParams(host=endpoint, port=50051, secure=False)
-        ),
-        auth_client_secret=AuthApiKey(weaviate_api_key),
-    )
-    client.connect()
-
+    client = _get_weaviate_client()
+    print("🍎 Connected to Weaviate")
     whitelist = client.collections.get("Compliance_Artifacts")
 
+    #TODO: create an openai call to polish the search query
     # Build BM25 query: natural‑language sentence + facet keywords
     # bm25_query = f"{query} " + " ".join(sum(property_keywords.values(), []))
     bm25_query = query
@@ -197,10 +206,79 @@ async def kb_certification_search(query: str):
         # return_properties=["domain"],
         return_metadata=wq.MetadataQuery(score=True),
     )
-    print(response)
+    # Print only the names from the response objects
+    for obj in response.objects:
+        if hasattr(obj, 'properties') and 'name' in obj.properties:
+            print(f"Found: {obj.properties['name']}")
 
     client.close()
     return response
 
-async def kb_certification_update():
-    pass
+async def kb_compliance_save(artifact: ComplianceArtifact, uuid: str = None):
+    """Save a compliance artifact to the Weaviate knowledge base.
+    
+    Args:
+        artifact: ComplianceArtifact object with all required fields
+        uuid: Optional UUID string. If provided, updates existing object; if None, creates new object
+        
+    Returns:
+        str: UUID of the saved/updated object
+        
+    Raises:
+        Exception: If save operation fails
+    """
+    # Initialize Weaviate client using extracted helper function
+    client = _get_weaviate_client()
+    
+    try:
+        # Get the compliance artifacts collection
+        compliance_collection = client.collections.get("Compliance_Artifacts")
+        
+        # Convert ComplianceArtifact to dictionary for Weaviate
+        properties = {
+            "artifact_type": artifact.artifact_type,
+            "name": artifact.name,
+            "aliases": artifact.aliases or [],
+            "issuing_body": artifact.issuing_body,
+            "region": artifact.region,
+            "mandatory": artifact.mandatory,
+            "validity_period_months": artifact.validity_period_months,
+            "overview": artifact.overview,
+            "full_description": artifact.full_description,
+            "legal_reference": artifact.legal_reference,
+            "domain_tags": artifact.domain_tags,
+            "scope_tags": artifact.scope_tags or [],
+            "harmonized_standards": artifact.harmonized_standards or [],
+            "fee": artifact.fee,
+            "application_process": artifact.application_process,
+            "official_link": str(artifact.official_link),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "sources": [str(source) for source in artifact.sources]
+        }
+        
+        if uuid:
+            # Update existing object
+            compliance_collection.data.update(
+                uuid=uuid,
+                properties=properties
+            )
+            result_uuid = uuid
+        else:
+            # Create new object - let Weaviate generate UUID or use deterministic UUID
+            from weaviate.util import generate_uuid5
+            
+            # Generate deterministic UUID based on name and issuing_body for deduplication
+            uuid_data = f"{artifact.name}_{artifact.issuing_body}"
+            generated_uuid = generate_uuid5(uuid_data)
+            
+            result_uuid = compliance_collection.data.insert(
+                properties=properties,
+                uuid=generated_uuid
+            )
+            
+    except Exception as e:
+        raise Exception(f"Failed to save compliance artifact: {str(e)}")
+    finally:
+        client.close()
+    
+    return result_uuid

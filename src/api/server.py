@@ -17,6 +17,9 @@ from pydantic import BaseModel
 class StopRequest(BaseModel):
     session_id: str
 
+class TestAgentRequest(BaseModel):
+    query: str = "CE marking requirements for electronics"
+
 # Create FastAPI app
 app = FastAPI(
     title="Agentic Workflow API",
@@ -62,6 +65,12 @@ async def simple_chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
 async def health():
     """Health check endpoint"""
     return await health_check()
+
+@app.post("/test/background-agent")
+async def test_background_agent(request: TestAgentRequest):
+    """Test endpoint for background compliance ingestion agent"""
+    from src.agent_system.orchestration.operations import test_background_compliance_agent
+    return await test_background_compliance_agent(request.query)
 
 @app.get("/")
 async def root():

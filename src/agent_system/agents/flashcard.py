@@ -10,12 +10,11 @@ from src.config.schemas import Flashcard_Structure
 
 
 class FlashcardAgent(Agent):
-    def __init__(self, orchestrator):
+    def __init__(self):
         super().__init__(
             name="Flash Card Agent",
             handoff_description = FLASHCARD_AGENT_DESCRIPTION,
             instructions=FLASHCARD_AGENT_INSTRUCTION,
             tools=[flashcard_web_search],
             output_type=Flashcard_Structure
-        )
-        self.orchestrator = orchestrator 
+        ) 

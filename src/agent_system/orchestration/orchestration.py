@@ -21,16 +21,12 @@ class WorkflowOrchestrator:
     def __init__(self):
         print("🔧 Initializing WorkflowOrchestrator...")
         
-        # Set the global orchestrator for tools to access
-        from ..tools.core import set_global_orchestrator
-        set_global_orchestrator(self)
-        
         # Initialize db as None - will be set during request processing
         self.db = None
         
         # Initialize specialized agents first
-        self.certification_agent = CertificationAgent(self)
-        self.answer_agent = AnswerAgent(self)
+        self.certification_agent = CertificationAgent()
+        self.answer_agent = AnswerAgent()
         
         # Initialize triage agent with handoffs to specialized agents
         self.triage_agent = TriageAgent(self.certification_agent, self.answer_agent)

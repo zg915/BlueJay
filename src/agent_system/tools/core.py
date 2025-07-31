@@ -4,18 +4,12 @@ import json
 from agents import RunContextWrapper
 from typing import Any
 from agents import Agent, handoff, ItemHelpers, Runner
-
-# Global orchestrator placeholder (set this from your app entrypoint)
-global_orchestrator = None
-
-def set_global_orchestrator(orchestrator):
-    """Set the global orchestrator for tools to access"""
-    global global_orchestrator
-    global_orchestrator = orchestrator
-    return True
+from src.services.knowledgebase_service import kb_compliance_lookup, kb_compliance_save
+from src.config.schemas import ComplianceArtifact
+# Global orchestrator removed - no longer needed for clean architecture!
 
 #used by certification agent
-@function_tool(name_override="search_relevant_certification")
+@function_tool
 async def search_relevant_certification(search_queries: List[str]) -> Any:
     """Return a comprehensive raw list of certifications for four complementary queries.
 
@@ -28,11 +22,6 @@ async def search_relevant_certification(search_queries: List[str]) -> Any:
     """
 
     print(f"📋 Starting certification list workflow for queries: {search_queries!r}")
-
-    if global_orchestrator is None:
-        raise RuntimeError(
-            "Orchestrator not set. Call set_certification_workflow_orchestrator first."
-        )
 
     from ..orchestration import operations
     return await operations.search_relevant_certification(search_queries)
@@ -48,10 +37,6 @@ async def web_search(search_query: str):
     Returns:
         A JSON‑serialisable object containing the search results.
     """
-    if global_orchestrator is None:
-        raise RuntimeError(
-            "Orchestrator not set. Call set_certification_workflow_orchestrator first."
-        )
     from ..orchestration import operations
     return await operations.web_search(search_query)
 
@@ -66,8 +51,6 @@ async def compliance_research(search_queries: list[str]):
     Returns:
         A JSON‑serialisable object containing the combined search results.
     """
-    if global_orchestrator is None:
-        raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
     from ..orchestration import operations
     return await operations.compliance_research(search_queries)
 
@@ -82,8 +65,6 @@ async def flashcard_web_search(search_query: str):
     Returns:
         A JSON‑serialisable object containing the combined search results for the flash card information.
     """
-    if global_orchestrator is None:
-        raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
     from ..orchestration import operations
     return await operations.certification_web_search(search_query)
 
@@ -101,7 +82,33 @@ async def prepare_flashcard(certification_name:str, context: str = None):
         A JSON-serialisable object matching the `Flashcard` schema (name, issuing_body, region, description,
         classifications, mandatory, validity, official_link). The object is produced by running the FlashcardAgent.
     """
-    if global_orchestrator is None:
-        raise RuntimeError("Orchestrator not set. Call set_global_orchestrator first.")
     from ..orchestration import operations
-    return await operations.prepare_flashcard(certification_name, context, global_orchestrator)
+    return await operations.prepare_flashcard(certification_name, context)
+
+# used by compliance artifact ingestion agent
+@function_tool
+async def compliance_lookup(search_query: str):
+    """Perform Compliance Database search to provide relevant compliance artifacts.
+
+    Args:
+        search_query: English search strings used to search the databases
+
+    Returns:
+        A list of JSON objects containing the top hit compliance artifacts.
+    """
+
+    return await kb_compliance_lookup(search_query)
+
+@function_tool
+async def compliance_save(artifact: ComplianceArtifact, uuid: str = None):
+    """Save a compliance artifact to the knowledge base.
+
+    Args:
+        object: A fully populated JSON object matching the Field-By-Field contract.
+        uuid: The uuid of the weaviate object (None if creating new object).
+
+    Returns:
+        Confirmation of upsert (no additional data).
+    """
+    return await kb_compliance_save(artifact, uuid)
+

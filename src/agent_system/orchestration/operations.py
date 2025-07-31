@@ -3,7 +3,7 @@ Operations for research and search workflows
 """
 import time
 import asyncio
-from agents import Runner
+from agents import Runner, trace
 
 
 async def compliance_research(search_queries: list[str]):
@@ -66,11 +66,11 @@ async def search_relevant_certification(search_queries: list[str]):
 
 async def certification_web_search(query: str, use_domain: bool = False):
     """RAG API + Domain Search: Get domain metadata and search with domain filter"""
-    from src.services.knowledgebase_service import kb_domain_search
+    from src.services.knowledgebase_service import kb_domain_lookup
     from src.services.perplexity_service import perplexity_certification_search
     try:
         if use_domain:
-            domains = await kb_domain_search(query)
+            domains = await kb_domain_lookup(query)
         else:
             domains = None
 
@@ -83,11 +83,11 @@ async def certification_web_search(query: str, use_domain: bool = False):
 
 async def web_search(query: str, use_domain: bool = False):
     """RAG API + Domain Search: Get domain metadata and search with domain filter"""
-    from src.services.knowledgebase_service import kb_domain_search
+    from src.services.knowledgebase_service import kb_domain_lookup
     from src.services.perplexity_service import perplexity_search
     try:
         if use_domain:
-            domains = await kb_domain_search(query)
+            domains = await kb_domain_lookup(query)
         else:
             domains = None
 
@@ -102,7 +102,7 @@ async def prepare_flashcard(certification_name: str, context: str = None, orches
     """Generate flashcard for a certification using FlashcardAgent"""
     from ..agents import FlashcardAgent
     
-    agent = FlashcardAgent(orchestrator)
+    agent = FlashcardAgent()
 
     result = await Runner.run(
         agent,
@@ -110,3 +110,40 @@ async def prepare_flashcard(certification_name: str, context: str = None, orches
     )
 
     return str(result.final_output)
+
+async def test_background_compliance_agent(query: str):
+    """
+    Test runner for background compliance ingestion agent
+    
+    Args:
+        query: Search query for compliance artifacts
+    
+    Returns:
+        dict: Test results with status, result, and execution time
+    """
+    import time
+    from ..agents.background_compliance_ingestion import ComplianceIngestionAgent
+    
+    start_time = time.time()
+    
+    try:
+        # Create agent (no orchestrator needed!)
+        agent = ComplianceIngestionAgent()
+        with trace("Compliance Ingestion"):
+            result = await Runner.run(agent, input=query)
+        
+        return {
+            "status": "success",
+            "query": query,
+            "result": str(result.final_output),
+            "execution_time": f"{time.time() - start_time:.2f}s"
+        }
+        
+    except Exception as e:
+        return {
+            "status": "error",
+            "query": query,
+            "error": str(e),
+            "error_type": type(e).__name__,
+            "execution_time": f"{time.time() - start_time:.2f}s"
+        }
