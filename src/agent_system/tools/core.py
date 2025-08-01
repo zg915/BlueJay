@@ -83,9 +83,9 @@ async def prepare_flashcard(certification_name:str, context: str = None):
         classifications, mandatory, validity, official_link). The object is produced by running the FlashcardAgent.
     """
     from ..orchestration import operations
-    return await operations.prepare_flashcard(certification_name, context)
+    return await operations.run_flashcard_agent(certification_name, context)
 
-# used by compliance artifact ingestion agent
+# used by compliance artifact ingestion agent and flashcard agent
 @function_tool
 async def compliance_lookup(search_query: str):
     """Perform Compliance Database search to provide relevant compliance artifacts.

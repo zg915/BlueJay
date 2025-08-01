@@ -11,6 +11,7 @@ async def compliance_research(search_queries: list[str]):
     Specialized workflow for compliance requests.
     Runs RAG, Web, and DB search for each query in parallel, then combines and returns all results.
     """
+    from src.services.knowledgebase_service import kb_compliance_lookup
     print(f"📋 Starting compliance workflow for: {search_queries}")
 
     # Launch 3 tasks per query (RAG, Web, DB)
@@ -20,10 +21,9 @@ async def compliance_research(search_queries: list[str]):
         for query in search_queries[:1]:
             print(f"🚀 Starting Domain_web_search: {query}")
             print(f"🚀 Starting web_search: {query}")
+            tasks.append(kb_compliance_lookup(query))
             tasks.append(web_search(query, use_domain=True))
             tasks.append(web_search(query, use_domain=False))
-            #TODO: add the RAG
-            # tasks.append(_lookup_past_certifications(query))
         
         start_time = time.time()
         all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -40,6 +40,7 @@ async def search_relevant_certification(search_queries: list[str]):
     Specialized workflow for certification list requests.
     Runs RAG, Web, and DB search for each query in parallel, then combines and returns all results.
     """
+    from src.services.knowledgebase_service import kb_compliance_lookup
     print(f"📋 Starting certification list workflow for: {search_queries}")
 
     # Launch 3 tasks per query (RAG, Web, DB)
@@ -49,10 +50,9 @@ async def search_relevant_certification(search_queries: list[str]):
         for query in search_queries[:1]:
             print(f"🚀 Starting Domain_web_search: {query}")
             print(f"🚀 Starting web_search: {query}")
+            tasks.append(kb_compliance_lookup(query))
             tasks.append(certification_web_search(query, use_domain=True))
             tasks.append(certification_web_search(query, use_domain=False))
-            #TODO: add the RAG
-            # tasks.append(_lookup_past_certifications(query))
         
         start_time = time.time()  
         all_task_results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -98,7 +98,7 @@ async def web_search(query: str, use_domain: bool = False):
         print(f"❌ domain web search failed: {e}")
         return {}
 
-async def prepare_flashcard(certification_name: str, context: str = None, orchestrator=None):
+async def run_flashcard_agent(certification_name: str, context: str = None, orchestrator=None):
     """Generate flashcard for a certification using FlashcardAgent"""
     from ..agents import FlashcardAgent
     
@@ -111,15 +111,15 @@ async def prepare_flashcard(certification_name: str, context: str = None, orches
 
     return str(result.final_output)
 
-async def test_background_compliance_agent(query: str):
+async def run_compliance_agent_background(query: str):
     """
-    Test runner for background compliance ingestion agent
+    Run background compliance ingestion agent
     
     Args:
-        query: Search query for compliance artifacts
+        query: Search query for compliance artifacts (typically certification name)
     
     Returns:
-        dict: Test results with status, result, and execution time
+        dict: Results with status, result, and execution time
     """
     import time
     from ..agents.background_compliance_ingestion import ComplianceIngestionAgent
@@ -127,23 +127,31 @@ async def test_background_compliance_agent(query: str):
     start_time = time.time()
     
     try:
+        print(f"🔄 Starting background compliance agent for: {query[:30]}")
+        
         # Create agent (no orchestrator needed!)
         agent = ComplianceIngestionAgent()
-        with trace("Compliance Ingestion"):
+        with trace("Background Compliance Ingestion"):
             result = await Runner.run(agent, input=query)
+        
+        execution_time = time.time() - start_time
+        print(f"✅ Background compliance agent completed for: {query[:30]} in {execution_time:.2f}s")
         
         return {
             "status": "success",
             "query": query,
             "result": str(result.final_output),
-            "execution_time": f"{time.time() - start_time:.2f}s"
+            "execution_time": f"{execution_time:.2f}s"
         }
         
     except Exception as e:
+        execution_time = time.time() - start_time
+        print(f"⚠️ Background compliance agent failed for {query[:30]}: {e} (took {execution_time:.2f}s)")
+        
         return {
             "status": "error",
             "query": query,
             "error": str(e),
             "error_type": type(e).__name__,
-            "execution_time": f"{time.time() - start_time:.2f}s"
+            "execution_time": f"{execution_time:.2f}s"
         }

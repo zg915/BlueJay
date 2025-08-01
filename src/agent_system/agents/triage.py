@@ -8,7 +8,7 @@ from src.config.schemas import Reason_Structure
 class TriageAgent(Agent):
     def __init__(self, certification_agent, answer_agent):
         def _print_reason(context, input):
-            print("\n\n\nreason of choosing the workflow: ", input, "\n\n\n")
+            print("reason of choosing the workflow: ", input)
             
         super().__init__(
             name="Triage agent",

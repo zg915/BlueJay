@@ -2,7 +2,7 @@
 CertificationAgent definition
 """
 from agents import Agent, ModelSettings
-from src.agent_system.tools.core import search_relevant_certification
+from src.agent_system.tools.core import search_relevant_certification, compliance_lookup, prepare_flashcard, web_search
 from src.config.prompts import CERTIFICATION_AGENT_INSTRUCTION, CERTIFICATION_AGENT_DESCRIPTION
 from pydantic import BaseModel, Field
 from typing import List

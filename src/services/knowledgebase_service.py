@@ -182,7 +182,7 @@ async def kb_domain_lookup(query: str):
     client.close()
     return domain_list
 
-async def kb_compliance_lookup(query: str):
+async def kb_compliance_lookup(query: str, limit: int = 10):
     # VoyageAI API key and client
     VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
     voyage_client = voyageai.Client(VOYAGE_API_KEY)
@@ -250,20 +250,22 @@ OUTPUT: `lithium batteries environment China Mainland`
     )
     bm25_query = resp.choices[0].message.content.strip().strip('"')
     print(f"🍎 Query: {bm25_query}")
-    response = whitelist.query.hybrid(
-        query=bm25_query,
-        # vector=vector_embed,
-        alpha=0.5,
-        limit=5,
-        # query_properties=bm25_props,
-        return_metadata=wq.MetadataQuery(score=True),
-    )
-    # Print only the names from the response objects
-    for obj in response.objects:
-        if hasattr(obj, 'properties') and 'name' in obj.properties:
-            print(f"Found: {obj.properties['name']} (Score: {obj.metadata.score})")
-    client.close()
-    return response
+    try:
+        response = whitelist.query.hybrid(
+            query=bm25_query,
+            # vector=vector_embed,
+            alpha=0.5,
+            limit=limit,
+            # query_properties=bm25_props,
+            return_metadata=wq.MetadataQuery(score=True),
+        )
+        # Print only the names from the response objects
+        for obj in response.objects:
+            if hasattr(obj, 'properties') and 'name' in obj.properties:
+                print(f"{obj.properties['name']} (Score: {round(obj.metadata.score, 3)})", end=" | ")
+        return response
+    finally:
+        client.close()
 
 async def kb_compliance_save(artifact: ComplianceArtifact, uuid: str = None):
     """Save a compliance artifact to the Weaviate knowledge base.
