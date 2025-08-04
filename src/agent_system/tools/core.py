@@ -70,34 +70,36 @@ async def flashcard_web_search(search_query: str):
 
 # used by answer agent
 @function_tool
-async def prepare_flashcard(certification_name:str, context: str = None):
+async def prepare_flashcard(certification_name:str, context: str = None, language: str = "en"):
     """Generate a Flashcard JSON for a single certification using the FlashcardAgent.
 
     Args:
         certification_name: The exact name (or best-known alias) of the certification/standard to summarize.
         context: Optional short context (e.g., product type, target market/country) to help determine `mandatory`
                  and tailor the description. Pass None if unavailable.
+        language: the language of the content inside the flashcard
 
     Returns:
         A JSON-serialisable object matching the `Flashcard` schema (name, issuing_body, region, description,
         classifications, mandatory, validity, official_link). The object is produced by running the FlashcardAgent.
     """
     from ..orchestration import operations
-    return await operations.run_flashcard_agent(certification_name, context)
+    return await operations.run_flashcard_agent(certification_name, context, language)
 
 # used by compliance artifact ingestion agent and flashcard agent
 @function_tool
-async def compliance_lookup(search_query: str):
+async def compliance_lookup(search_query: str, search_limit: int = 10):
     """Perform Compliance Database search to provide relevant compliance artifacts.
 
     Args:
         search_query: English search strings used to search the databases
+        search_limit: number of maximum results returned from the database (not exceeding 20).
 
     Returns:
         A list of JSON objects containing the top hit compliance artifacts.
     """
 
-    return await kb_compliance_lookup(search_query)
+    return await kb_compliance_lookup(search_query, search_limit)
 
 @function_tool
 async def compliance_save(artifact: ComplianceArtifact, uuid: str = None):

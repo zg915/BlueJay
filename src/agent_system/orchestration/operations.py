@@ -98,7 +98,7 @@ async def web_search(query: str, use_domain: bool = False):
         print(f"❌ domain web search failed: {e}")
         return {}
 
-async def run_flashcard_agent(certification_name: str, context: str = None, orchestrator=None):
+async def run_flashcard_agent(certification_name: str, context: str = None, language: str = "en"):
     """Generate flashcard for a certification using FlashcardAgent"""
     from ..agents import FlashcardAgent
     
@@ -106,10 +106,20 @@ async def run_flashcard_agent(certification_name: str, context: str = None, orch
 
     result = await Runner.run(
         agent,
-        input=str({"certification_name": certification_name, "context": context}),
+        input=str({"certification_name": certification_name, "context": context, "language": language}),
     )
 
-    return str(result.final_output)
+    # Convert Pydantic model to JSON string for better parsing in streaming
+    final_output = result.final_output
+    if hasattr(final_output, 'model_dump_json'):
+        # Pydantic v2 method
+        return final_output.model_dump_json()
+    elif hasattr(final_output, 'json'):
+        # Pydantic v1 method
+        return final_output.json()
+    else:
+        # Fallback to regular string conversion
+        return str(final_output)
 
 async def run_compliance_agent_background(query: str):
     """

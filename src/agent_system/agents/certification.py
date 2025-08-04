@@ -15,7 +15,6 @@ class CertificationAgent(Agent):
             model="gpt-4.1", 
             handoff_description = CERTIFICATION_AGENT_DESCRIPTION,
             instructions=CERTIFICATION_AGENT_INSTRUCTION,
-            tools=[search_relevant_certification],
-            model_settings=ModelSettings(tool_choice="search_relevant_certification"),
+            tools=[compliance_lookup, web_search, prepare_flashcard],
             output_type=List_Structure
         ) 

@@ -182,7 +182,7 @@ async def kb_domain_lookup(query: str):
     client.close()
     return domain_list
 
-async def kb_compliance_lookup(query: str, limit: int = 10):
+async def kb_compliance_lookup(query: str, search_limit: int = 10):
     # VoyageAI API key and client
     VOYAGE_API_KEY = os.getenv("VOYAGE_API_KEY")
     voyage_client = voyageai.Client(VOYAGE_API_KEY)
@@ -190,79 +190,81 @@ async def kb_compliance_lookup(query: str, limit: int = 10):
     client = _get_weaviate_client()
     whitelist = client.collections.get("Compliance_Artifacts")
 
-    # Provide KB schema context to OpenAI to optimize the search query
-    system_prompt = """
-    You are “QueryRefiner-Pro,” a specialist that transforms messy, natural-language user questions into crisp,
-high-recall BM25 search strings for our **Compliance_Artifacts** vector database.
+    def _polish_query(query):
+        system_prompt = """
+        You are “QueryRefiner-Pro,” a specialist that transforms messy, natural-language user questions into crisp,
+    high-recall BM25 search strings for our **Compliance_Artifacts** vector database.
 
-========================================
-KNOWLEDGE-BASE CONTEXT
-----------------------------------------
-Indexed text fields
-  • name               – official scheme title  
-  • aliases            – acronyms / alternate names  
-  • legal_reference    – directive / standard number  
-  • domain_tags        – one of {product, safety, environment, csr, other}  
-  • scope_tags         – product families or industry sectors  
-  • overview           – two-sentence summary of each scheme  
-  • full_description   – 80–150-word narrative with purpose, scope, use cases  
+    ========================================
+    KNOWLEDGE-BASE CONTEXT
+    ----------------------------------------
+    Indexed text fields
+    • name               – official scheme title  
+    • aliases            – acronyms / alternate names  
+    • legal_reference    – directive / standard number  
+    • domain_tags        – one of {product, safety, environment, csr, other}  
+    • scope_tags         – product families or industry sectors  
+    • overview           – two-sentence summary of each scheme  
+    • full_description   – 80–150-word narrative with purpose, scope, use cases  
 
-========================================
-REFINING RULES
-----------------------------------------
-1. **Keep only search-worthy tokens.**
-   • nouns → product family, sector, country/region
-   • verbs/adjectives → drop unless they narrow legal scope (“export”, “import”, “hazardous”)
-2. **Generalise product SKUs to industry nouns.**
-   • lipstick, mascara → cosmetics
-   • phone charger → electronics
-3. **Normalise geography.**
-   • “US”, “USA”, “American” → “United States”
-   • If EU member mentioned → add “EU/EEA”
-4. **No guessing certifications.**
-   • Do NOT invent scheme names, aliases, or tags.
-   • Just polish the user’s intent into keywords.
-5. **Output exactly one line** – the final query string, no quotes, no JSON, no commentary.
+    ========================================
+    REFINING RULES
+    ----------------------------------------
+    1. **Keep only search-worthy tokens.**
+    • nouns → product family, sector, country/region
+    • verbs/adjectives → drop unless they narrow legal scope (“export”, “import”, “hazardous”)
+    2. **Generalise product SKUs to industry nouns.**
+    • lipstick, mascara → cosmetics
+    • phone charger → electronics
+    3. **Normalise geography.**
+    • “US”, “USA”, “American” → “United States”
+    • If EU member mentioned → add “EU/EEA”
+    4. **No guessing certifications.**
+    • Do NOT invent scheme names, aliases, or tags.
+    • Just polish the user’s intent into keywords.
+    5. **Output exactly one line** – the final query string, no quotes, no JSON, no commentary.
 
-========================================
-EXAMPLES
-----------------------------------------
-USER:  “certifications to export lipstick to US”
-OUTPUT: `export cosmetics United States`
+    ========================================
+    EXAMPLES
+    ----------------------------------------
+    USER:  “certifications to export lipstick to US”
+    OUTPUT: `export cosmetics United States`
 
-USER:  “needed docs for selling smart toys in EU”
-OUTPUT: `smart toys EU/EEA`
+    USER:  “needed docs for selling smart toys in EU”
+    OUTPUT: `smart toys EU/EEA`
 
-USER:  “environment regs for lithium batteries china”
-OUTPUT: `lithium batteries environment China Mainland`
-"""
-    # 2a. Refine the search query using OpenAI
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-    openai.api_key = OPENAI_API_KEY
+    USER:  “environment regs for lithium batteries china”
+    OUTPUT: `lithium batteries environment China Mainland`
+    """
+        # 2a. Refine the search query using OpenAI
+        OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+        openai.api_key = OPENAI_API_KEY
 
-    resp = openai.chat.completions.create(
-        model="gpt-4o",
-        temperature=0,
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": query},
-        ],
-    )
-    bm25_query = resp.choices[0].message.content.strip().strip('"')
+        resp = openai.chat.completions.create(
+            model="gpt-4o",
+            temperature=0,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": query},
+            ],
+        )
+        return resp.choices[0].message.content.strip().strip('"')
+    
+    bm25_query = query
     print(f"🍎 Query: {bm25_query}")
     try:
         response = whitelist.query.hybrid(
             query=bm25_query,
             # vector=vector_embed,
             alpha=0.5,
-            limit=limit,
+            limit=search_limit,
             # query_properties=bm25_props,
             return_metadata=wq.MetadataQuery(score=True),
         )
         # Print only the names from the response objects
-        for obj in response.objects:
-            if hasattr(obj, 'properties') and 'name' in obj.properties:
-                print(f"{obj.properties['name']} (Score: {round(obj.metadata.score, 3)})", end=" | ")
+        # for obj in response.objects:
+        #     if hasattr(obj, 'properties') and 'name' in obj.properties:
+        #         print(f"{obj.properties['name']} (Score: {round(obj.metadata.score, 3)})")
         return response
     finally:
         client.close()

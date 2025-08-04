@@ -59,7 +59,7 @@ class WorkflowOrchestrator:
                 return
             print("✅ Input moderation passed")
             #TODO: add back full context
-            context_data = await db_get_recent_context(db, session_id, 3)
+            context_data = await db_get_recent_context(db, session_id, 1)
             print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("\n🎯 Running triage agent with handoffs...")
 
@@ -75,6 +75,8 @@ class WorkflowOrchestrator:
             text_response = []
             is_cancelled = False
             certification_response = []
+            # Track tool calls to match with tool outputs
+            tool_call_map = {}
             async for event in result.stream_events():
 
                 # Check for cancellation
@@ -95,14 +97,50 @@ class WorkflowOrchestrator:
                         yield {"type": "format", "response": "Answer"}
                     continue
 
-                # 2) Tool use trigger
-                if event.type == "run_item_stream_event" and event.name == "tool_called":
-                    item = event.item
-                    tool = item.raw_item.name
-                    yield {"type": "processing", "response": f"Performing {tool}"}
-                    continue
+                # 2) Tool use trigger - stream when tool is called and map call_id
+                # NOTE: Due to OpenAI Agents SDK bug #1282, these events fire late (after tool execution)
+                # This will be fixed in a future SDK release
+                if event.type == "run_item_stream_event" and hasattr(event.item, 'type'):
+                    
+                    if event.item.type == "tool_call_item":
+                        # Get tool name and call_id for mapping
+                        raw_item = getattr(event.item, 'raw_item', None)
+                        
+                        # Raw item is a ResponseFunctionToolCall object, not a dict
+                        tool_name = getattr(raw_item, 'name', None) if raw_item else None
+                        call_id = getattr(raw_item, 'call_id', None) if raw_item else None
+                        
+                        if tool_name and call_id:
+                            # Store the mapping for later correlation
+                            tool_call_map[call_id] = tool_name
+                            yield {"type": "processing", "response": f"Performing {tool_name}"}
+                        continue
+                        
+                    elif event.item.type == "tool_call_output_item":
+                        # Get call_id and look up the tool name
+                        raw_item = getattr(event.item, 'raw_item', None)
+                        
+                        # Raw item is a dict for output items
+                        call_id = raw_item.get('call_id') if isinstance(raw_item, dict) else None
+                        tool_name = tool_call_map.get(call_id, 'unknown') if call_id else 'unknown'
+                        
+                        # Get the output
+                        output = raw_item.get('output', '') if isinstance(raw_item, dict) else ''
+                        
+                        if tool_name == "prepare_flashcard":
+                            try:
+                                import json
+                                # If output is already a dict/list, convert it to JSON string first
+                                if isinstance(output, (dict, list)):
+                                    result_data = output
+                                else:
+                                    result_data = json.loads(str(output))
+                                yield {"type": "tool_result", "response": result_data}
+                            except json.JSONDecodeError:
+                                yield {"type": "tool_result", "response": str(output)}
+                        continue
 
-                # 3) Stream ONLY inside "answer" string and "flashcards" array
+                # 4) Stream ONLY inside "answer" string and "flashcards" array
                 if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                     chunk = event.data.delta
                     prev_len = len(global_buf)
