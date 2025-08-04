@@ -1,0 +1,35 @@
+services:
+  bluejay-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount source code for hot reload during development
+      - ./src:/app/src
+      - ./requirements.txt:/app/requirements.txt
+    environment:
+      # Connect to your existing AWS services
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT:-5432}
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PERPLEXITY_API_KEY=${PERPLEXITY_API_KEY}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - PYTHONUNBUFFERED=1
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: >
+      sh -c "
+        echo 'Waiting for database connection...' &&
+        until pg_isready -h $${DB_HOST} -p $${DB_PORT} -U $${DB_USER}; do
+          echo 'Database not ready, waiting 2 seconds...'
+          sleep 2
+        done &&
+        echo 'Database ready! Starting BlueJay...' &&
+        uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --reload
+      "

@@ -19,6 +19,7 @@ BlueJay is an intelligent backend system that routes user queries to specialized
 - **Parallel Search:** Multi-source research (web, RAG, DB) for comprehensive answers
 - **Database Integration:** Async SQLAlchemy/PostgreSQL for persistent chat, session, and research data
 - **Extensible:** Easily add new agents, tools, or data sources
+- **Containerized:** Docker setup for consistent development and deployment environments
 
 ---
 
@@ -28,7 +29,8 @@ BlueJay is an intelligent backend system that routes user queries to specialized
 - **AI/Agents:** OpenAI Agents SDK, GPT-4, Perplexity API
 - **Streaming:** Server-Sent Events (SSE) via FastAPI StreamingResponse
 - **Session Management:** Custom session manager with asyncio.Event for cancellation
-- **Testing:** pytest
+- **Containerization:** Docker & Docker Compose for development and deployment
+- **Vector DB:** Weaviate for knowledge base operations
 
 ---
 
@@ -47,22 +49,61 @@ BlueJay/
 │   │   └── guardrails/       # Input validation and moderation
 │   ├── api/                   # FastAPI endpoints and server
 │   ├── config/                # Prompts and output schemas
-│   ├── services/              # Self-contained service modules (organized by data source)
-│   │   ├── database_service.py     # Simplified database operations
-│   │   ├── database_service_archive.py # Archived unused database functions
-│   │   ├── perplexity_service.py   # Perplexity API integration
-│   │   ├── knowledgebase_service.py # Knowledge base/Weaviate operations
-│   │   └── models.py               # SQLAlchemy database models
-│   └── tests/                 # Test files
+│   └── services/              # Self-contained service modules (organized by data source)
+│       ├── database_service.py     # Simplified database operations
+│       ├── database_service_archive.py # Archived unused database functions
+│       ├── perplexity_service.py   # Perplexity API integration
+│       ├── knowledgebase_service.py # Knowledge base/Weaviate operations
+│       └── models.py               # SQLAlchemy database models
 ├── requirements.txt           # Python dependencies
-├── README.md                  # This file
+├── Dockerfile                 # Docker image definition
+├── docker-compose.yml         # Docker Compose configuration
+├── .dockerignore             # Docker build context exclusions
+├── env_example.txt           # Environment variables template
+└── README.md                 # This file
 ```
 
 ---
 
 ## ⚡ Quickstart
 
-### 1. Clone & Setup
+### 🐳 Docker Setup (Recommended)
+
+**1. Clone & Configure Environment**
+```sh
+git clone <repository-url>
+cd BlueJay
+
+# Copy and configure environment variables
+cp env_example.txt .env
+# Edit .env with your AWS PostgreSQL, Weaviate, and API credentials
+```
+
+**2. Start with Docker Compose**
+```sh
+# Start BlueJay (connects to your existing AWS services)
+docker-compose up
+
+# Or run in background
+docker-compose up -d
+
+# View logs
+docker-compose logs -f bluejay-app
+```
+
+**3. Access BlueJay**
+- API: http://localhost:8000
+- Health Check: http://localhost:8000/health
+- API Docs: http://localhost:8000/docs
+
+**4. Stop Services**
+```sh
+docker-compose down
+```
+
+### 🐍 Local Python Setup (Alternative)
+
+**1. Clone & Setup Virtual Environment**
 ```sh
 git clone <repository-url>
 cd BlueJay
@@ -71,24 +112,13 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 2. Configure Environment
-Create a `.env` file in the root:
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=tic_research
-DB_USER=postgres
-DB_PASSWORD=your_password
-OPENAI_API_KEY=your_openai_api_key
-PERPLEXITY_API_KEY=your_perplexity_api_key
-```
-
-### 3. Initialize Database
+**2. Configure Environment**
 ```sh
-python init_database.py
+cp env_example.txt .env
+# Edit .env with your AWS database and API credentials
 ```
 
-### 4. Run the Server
+**3. Run the Server**
 ```sh
 uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
 ```
@@ -260,10 +290,31 @@ The BlueJay codebase has been significantly refactored to improve maintainabilit
 
 ## 🧰 Troubleshooting
 
-- **Check logs** for errors and workflow traces
-- **Verify environment variables** are set correctly
-- **Test database connection** with `python test_db_connection.py`
-- **Use `/health` endpoint** to verify server is running
+### Docker Issues
+- **Logs not showing:** Check `docker-compose logs -f bluejay-app`
+- **Port conflicts:** Change port in docker-compose.yml (e.g., `"8001:8000"`)
+- **Environment variables:** Verify `.env` file exists and has correct AWS credentials
+- **Database connection:** Ensure AWS PostgreSQL allows connections from your IP
+
+### General Issues  
+- **Health check:** Visit http://localhost:8000/health
+- **API documentation:** Check http://localhost:8000/docs for interactive API docs
+- **Rebuild image:** Run `docker-compose up --build` to rebuild after dependency changes
+
+### Development Commands
+```sh
+# Rebuild Docker image
+docker-compose build --no-cache
+
+# View container logs  
+docker-compose logs -f
+
+# Access container shell
+docker-compose exec bluejay-app bash
+
+# Stop and remove containers
+docker-compose down --volumes
+```
 
 ---
 

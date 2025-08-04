@@ -6,7 +6,6 @@ pydantic
 requests
 openai
 python-dotenv
-pytest
 httpx
 loguru
 anyio>=4.5.0
@@ -16,3 +15,4 @@ aiohttp
 ijson
 voyageai
 weaviate-client
+protobuf>=5.29.0,<6.0.0
