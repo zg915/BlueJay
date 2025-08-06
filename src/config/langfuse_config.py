@@ -34,10 +34,15 @@ def setup_langfuse_tracing():
         # Apply nest_asyncio for compatibility
         nest_asyncio.apply()
         
-        # Configure logfire instrumentation
+        # Configure logfire instrumentation (suppress console output)
+        import logging
+        logging.getLogger('logfire').setLevel(logging.WARNING)
+        logging.getLogger('opentelemetry').setLevel(logging.WARNING)
+        
         logfire.configure(
             service_name='bluejay_agent_service',
             send_to_logfire=False,
+            console=False,  # Disable console output
         )
         logfire.instrument_openai_agents()
         
