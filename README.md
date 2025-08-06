@@ -18,6 +18,7 @@ BlueJay is an intelligent backend system that routes user queries to specialized
 - **Session Management:** Each workflow session is tracked and can be cancelled or cleaned up
 - **Parallel Search:** Multi-source research (web, RAG, DB) for comprehensive answers
 - **Database Integration:** Async SQLAlchemy/PostgreSQL for persistent chat, session, and research data
+- **Agent Tracing:** Comprehensive execution monitoring with Langfuse for debugging and optimization
 - **Extensible:** Easily add new agents, tools, or data sources
 - **Containerized:** Docker setup for consistent development and deployment environments
 
@@ -31,6 +32,7 @@ BlueJay is an intelligent backend system that routes user queries to specialized
 - **Session Management:** Custom session manager with asyncio.Event for cancellation
 - **Containerization:** Docker & Docker Compose for development and deployment
 - **Vector DB:** Weaviate for knowledge base operations
+- **Observability:** Langfuse for agent execution tracing and monitoring
 
 ---
 
@@ -48,7 +50,10 @@ BlueJay/
 │   │   ├── tools/            # Function tools for agents
 │   │   └── guardrails/       # Input validation and moderation
 │   ├── api/                   # FastAPI endpoints and server
-│   ├── config/                # Prompts and output schemas
+│   ├── config/                # Configuration modules
+│   │   ├── langfuse_config.py      # Langfuse tracing setup
+│   │   ├── prompts.py              # Agent prompts and instructions
+│   │   └── schemas.py              # Output schemas and data models
 │   └── services/              # Self-contained service modules (organized by data source)
 │       ├── database_service.py     # Simplified database operations
 │       ├── database_service_archive.py # Archived unused database functions
@@ -154,6 +159,22 @@ DB_USER=postgres
 DB_PASSWORD=your_password
 ```
 
+### Langfuse Observability (Optional)
+BlueJay integrates with Langfuse for comprehensive agent execution tracing, providing insights into agent performance, token usage, and workflow debugging.
+
+**Optional Environment Variables:**
+```env
+LANGFUSE_PUBLIC_KEY=pk-lf-your_public_key_here
+LANGFUSE_SECRET_KEY=sk-lf-your_secret_key_here
+LANGFUSE_HOST=https://cloud.langfuse.com
+```
+
+**Key Features:**
+- **Agent Execution Tracing:** Monitor each agent's decision-making process
+- **Token Usage Tracking:** Track API costs and optimize performance  
+- **Workflow Debugging:** Visualize multi-agent interactions and handoffs
+- **Performance Analytics:** Identify bottlenecks and optimization opportunities
+
 ---
 
 ## 🌐 API Usage
@@ -244,10 +265,18 @@ The BlueJay codebase has been significantly refactored to improve maintainabilit
 - **Consolidated Models**: Moved `models.py` into services directory for better organization
 - **Direct Function Calls**: Eliminated internal function redirects for better performance
 
+### Observability and Monitoring (New in Traces Branch)
+- **Langfuse Integration**: Added comprehensive agent execution tracing with automatic OpenAI Agents SDK instrumentation
+- **Enhanced Configuration**: New `langfuse_config.py` module for centralized observability setup
+- **Environment Support**: Docker Compose and environment template updated with tracing variables
+- **Silent Operation**: Tracing runs in background without cluttering terminal output
+- **Performance Optimization**: Fixed dependency issues and improved service reliability
+
 ### Benefits
 - **Reduced Complexity**: Clear function ownership and no redirect chains
 - **Better Maintainability**: Functions organized by their data source
 - **Improved Performance**: Direct function calls without wrappers
+- **Enhanced Debugging**: Full visibility into agent execution workflows
 - **Easier Testing**: Self-contained services with clear boundaries
 
 ---
@@ -346,6 +375,38 @@ docker-compose exec bluejay-app bash
 # Stop and remove containers
 docker-compose down --volumes
 ```
+
+---
+
+## 📋 Recent Updates
+
+### v0.0.1 - Agent Observability Implementation (August 2025)
+
+**Branch**: `traces` (merged from `compliance-artifact`)
+
+**Technical Changes**:
+- **Added Langfuse tracing integration** (`src/config/langfuse_config.py`)
+  - OpenAI Agents SDK instrumentation with `logfire.instrument_openai_agents()`
+  - Async-compatible tracing with `nest_asyncio.apply()`
+  - Silent operation mode (console output disabled)
+- **Updated dependencies** (`requirements.txt`)
+  - `langfuse` - Agent execution tracing
+  - `logfire` - OpenTelemetry instrumentation 
+  - `nest_asyncio` - Async compatibility
+  - `protobuf>=5.29.0,<6.0.0` - Protocol buffer support
+- **Enhanced Docker configuration** (`docker-compose.yml`)
+  - Added Langfuse environment variables
+  - Optional tracing configuration
+- **Service reliability improvements**
+  - Fixed dependency resolution issues in orchestration layer
+  - Optimized Perplexity service imports
+
+**Environment Variables** (Optional):
+```
+LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, LANGFUSE_HOST
+```
+
+**Backward Compatibility**: Full - existing deployments unaffected without Langfuse credentials.
 
 ---
 
