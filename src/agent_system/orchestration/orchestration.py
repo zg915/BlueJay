@@ -3,14 +3,13 @@ Pure orchestration coordinator for agent workflow management
 Handles agent handoffs and streaming without business logic
 """
 import asyncio
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Runner
 from openai.types.responses import ResponseTextDeltaEvent
 from langfuse import get_client
 
-from ..agents import CertificationAgent, AnswerAgent, FlashcardAgent, TriageAgent
-from ..guardrails import validate_input, input_moderation, output_moderation
+from ..agents import CertificationAgent, AnswerAgent, TriageAgent
+from ..guardrails import validate_input, input_moderation
 from src.services.database_service import (
     db_store_message, db_get_recent_context
 )
@@ -180,6 +179,11 @@ class WorkflowOrchestrator:
                             operations.run_compliance_agent_background(str(card))
                             )
             assistant_message_obj = await db_store_message(db, session_id, "".join(text_response), certifications=certification_response, role="assistant", reply_to=user_message_id, is_cancelled=is_cancelled)
+            
+            # Flush the captured trace to PostgreSQL with assistant message_id
+            from src.config.trace_processor import postgres_sink
+            await postgres_sink.flush_to_database(assistant_message_obj['message_id'])
+            
             yield {"type": "completed", "response": assistant_message_obj}
             return
 

@@ -1,8 +1,12 @@
 """
 FastAPI server configuration for OpenAI Agents SDK
 """
+import os
 from dotenv import load_dotenv
 load_dotenv()
+
+# Enable sensitive data in OpenAI Agents SDK traces (must be set before any agents imports)
+os.environ["OPENAI_AGENTS_TRACE_INCLUDE_SENSITIVE_DATA"] = "1"
 
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +24,12 @@ from src.config.langfuse_config import setup_langfuse_tracing
 print("🔧 Initializing Langfuse tracing...")
 tracing_enabled = setup_langfuse_tracing()
 print(f"🔧 Langfuse tracing initialized: {tracing_enabled}")
+
+# Setup PostgreSQL trace processor for backup storage
+from src.config.trace_processor import setup_postgresql_trace_processor, postgres_sink
+print("🔧 Initializing PostgreSQL trace processor...")
+postgres_tracing_enabled = setup_postgresql_trace_processor()
+print(f"🔧 PostgreSQL trace processor initialized: {postgres_tracing_enabled}")
 
 
 class StopRequest(BaseModel):

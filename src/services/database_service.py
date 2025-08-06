@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy import func, update
 from fastapi.encoders import jsonable_encoder
-from .models import ChatSession, ChatMessage
+from .models import ChatSession, ChatMessage, AgentTrace, AgentSpan
 
 logger = logging.getLogger(__name__)
 
@@ -115,3 +115,91 @@ async def db_get_recent_context(db: AsyncSession, session_id: str, chat_length: 
         "messages": formatted_messages,
         "message_count": len(formatted_messages),
     }
+
+async def db_store_trace(
+    db: AsyncSession,
+    trace_id: str,
+    workflow_name: str,
+    started_at: datetime.datetime,
+    ended_at: datetime.datetime,
+    status: str = None,
+    trace_metadata: dict = None,
+    usage_json: dict = None,
+    raw_json: dict = None,
+    message_id: str = None
+):
+    """
+    Store an agent trace in the database
+    """
+    try:
+        # Check if trace already exists (avoid duplicates)
+        existing = await db.execute(
+            select(AgentTrace).where(AgentTrace.trace_id == trace_id)
+        )
+        if existing.scalar_one_or_none():
+            return None
+        
+        # Create and persist the AgentTrace
+        trace = AgentTrace(
+            trace_id=trace_id,
+            workflow_name=workflow_name,
+            started_at=started_at,
+            ended_at=ended_at,
+            status=status,
+            trace_metadata=trace_metadata or {},
+            usage_json=usage_json or {},
+            raw_json=raw_json or {},
+            message_id=message_id
+        )
+        db.add(trace)
+        await db.commit()
+        await db.refresh(trace)
+        return jsonable_encoder(trace)
+        
+    except Exception as e:
+        logger.error(f"Failed to store trace {trace_id}: {e}")
+        await db.rollback()
+        return None
+
+async def db_store_spans(
+    db: AsyncSession,
+    spans_data: list
+):
+    """
+    Store multiple agent spans in the database
+    """
+    try:
+        span_records = []
+        for span_data in spans_data:
+            span_record = AgentSpan(
+                span_id=span_data["span_id"],
+                trace_id=span_data["trace_id"],
+                parent_id=span_data.get("parent_id"),
+                name=span_data["name"],
+                span_type=span_data["span_type"],
+                started_at=span_data["started_at"],
+                ended_at=span_data["ended_at"],
+                data=span_data["data"]
+            )
+            span_records.append(span_record)
+        
+        db.add_all(span_records)
+        await db.commit()
+        return len(span_records)
+        
+    except Exception as e:
+        logger.error(f"Failed to store spans: {e}")
+        await db.rollback()
+        return 0
+
+def parse_trace_timestamp(timestamp_str: str = None) -> datetime.datetime:
+    """
+    Parse timestamp string to datetime object for trace storage
+    """
+    if not timestamp_str:
+        return datetime.datetime.utcnow()
+    try:
+        # Handle ISO format timestamps from OpenAI SDK
+        return datetime.datetime.fromisoformat(timestamp_str.replace('Z', '+00:00'))
+    except (ValueError, AttributeError):
+        return datetime.datetime.utcnow()

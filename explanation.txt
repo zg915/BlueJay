@@ -1,0 +1,31 @@
+this is a failed attempt to store the spans and traces to postgresql database.
+
+The code is able to store trace id, and basic info about spans, but does not contain real content (input and output text), only the behavior (handoff to whatever, use which tool).
+
+The database schema used in this attempt is as follows (the two tables have been dropped from the database.)
+
+CREATE TABLE IF NOT EXISTS agent_traces (
+  trace_id      TEXT        PRIMARY KEY,
+  workflow_name TEXT        NOT NULL,
+  started_at    TIMESTAMPTZ NOT NULL,
+  ended_at      TIMESTAMPTZ NOT NULL,
+  status        TEXT,
+  metadata      JSONB,
+  usage_json    JSONB,
+  raw_json      JSONB,
+  message_id    TEXT        -- new column, no FK
+);
+
+-- spans table remains unchanged:
+CREATE TABLE IF NOT EXISTS agent_spans (
+  span_id     TEXT        PRIMARY KEY,
+  trace_id    TEXT        NOT NULL REFERENCES agent_traces(trace_id) ON DELETE CASCADE,
+  parent_id   TEXT,
+  name        TEXT        NOT NULL,
+  span_type   TEXT        NOT NULL,
+  started_at  TIMESTAMPTZ NOT NULL,
+  ended_at    TIMESTAMPTZ NOT NULL,
+  data        JSONB       NOT NULL
+);
+
+ALTER TABLE agent_traces RENAME COLUMN metadata TO trace_metadata

@@ -62,4 +62,27 @@ class ConversationMemory(Base):
     summary = Column(Text)
     up_to_message_order = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    summarization_strategy = Column(String) 
+    summarization_strategy = Column(String)
+
+class AgentTrace(Base):
+    __tablename__ = 'agent_traces'
+    trace_id = Column(String, primary_key=True)
+    workflow_name = Column(String, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True), nullable=False)
+    status = Column(String)
+    trace_metadata = Column(JSON)
+    usage_json = Column(JSON)
+    raw_json = Column(JSON)
+    message_id = Column(String, nullable=True)
+
+class AgentSpan(Base):
+    __tablename__ = 'agent_spans'
+    span_id = Column(String, primary_key=True)
+    trace_id = Column(String, ForeignKey('agent_traces.trace_id', ondelete='CASCADE'), nullable=False)
+    parent_id = Column(String, nullable=True)
+    name = Column(String, nullable=False)
+    span_type = Column(String, nullable=False)
+    started_at = Column(DateTime(timezone=True), nullable=False)
+    ended_at = Column(DateTime(timezone=True), nullable=False)
+    data = Column(JSON, nullable=False)
