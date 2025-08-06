@@ -9,8 +9,8 @@ from agents import Runner
 from openai.types.responses import ResponseTextDeltaEvent
 from langfuse import get_client
 
-from ..agents import CertificationAgent, AnswerAgent, FlashcardAgent, TriageAgent
-from ..guardrails import validate_input, input_moderation, output_moderation
+from ..agents import CertificationAgent, AnswerAgent, TriageAgent
+from ..guardrails import validate_input, input_moderation
 from src.services.database_service import (
     db_store_message, db_get_recent_context
 )
@@ -170,7 +170,7 @@ class WorkflowOrchestrator:
                     session_id=session_id,
                     tags=["Main"]
                 )
-
+            print("✅ Agent answer completed")
             #Save the finalized message
             if not certification_response:
                 certification_response = None
@@ -180,6 +180,7 @@ class WorkflowOrchestrator:
                             operations.run_compliance_agent_background(str(card))
                             )
             assistant_message_obj = await db_store_message(db, session_id, "".join(text_response), certifications=certification_response, role="assistant", reply_to=user_message_id, is_cancelled=is_cancelled)
+            print("✅ Message stored in database")
             yield {"type": "completed", "response": assistant_message_obj}
             return
 

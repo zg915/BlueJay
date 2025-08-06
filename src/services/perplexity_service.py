@@ -46,7 +46,7 @@ async def perplexity_certification_search(query: str, domains: list = None):
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 200:
                     result = await response.json()
-                    print(f"✅ Perplexity API successful")
+                    print(f"🛜 Perplexity API successful")
                     # Expecting result["choices"][0]["message"]["content"] to be a JSON array
                     content = result["choices"][0]["message"]["content"]
                     # Parse the JSON content returned by Perplexity API
@@ -99,7 +99,7 @@ async def perplexity_search(query: str, domains: list = None):
             async with session.post(url, headers=headers, json=payload) as response:
                 if response.status == 200:
                     result = await response.json()
-                    print(f"✅ Perplexity API successful")
+                    print(f"🛜 Perplexity API successful")
                     # Expecting result["choices"][0]["message"]["content"] to be a JSON array
                     content = result["choices"][0]["message"]["content"]
                     citations = result.get('citations', [])
