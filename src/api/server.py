@@ -3,6 +3,7 @@ FastAPI server configuration for OpenAI Agents SDK
 """
 from dotenv import load_dotenv
 load_dotenv()
+
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,6 +14,13 @@ from .endpoints import (
 )
 from src.agent_system.session_manager import workflow_sessions
 from pydantic import BaseModel
+
+# Setup Langfuse tracing using the working direct OpenTelemetry approach
+from src.config.langfuse_config import setup_langfuse_tracing
+print("🔧 Initializing Langfuse tracing...")
+tracing_enabled = setup_langfuse_tracing()
+print(f"🔧 Langfuse tracing initialized: {tracing_enabled}")
+
 
 class StopRequest(BaseModel):
     session_id: str
@@ -51,6 +59,7 @@ async def streaming_chat(request: ChatRequest, db: AsyncSession = Depends(get_db
     """Streaming chat endpoint with real-time updates"""
     return await chat_stream(request, db)
 
+#TODO: feel like the stop might not be working well
 @app.post("/stop")
 async def stop_workflow(request: StopRequest):
     workflow_sessions.stop(request.session_id)
@@ -82,8 +91,6 @@ async def root():
             "streaming_chat": "/ask/stream",
             "simple_chat": "/ask",
             "health": "/health",
-            "create_session": "/sessions",
-            "session_history": "/sessions/{session_id}/history"
         }
     }
 

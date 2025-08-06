@@ -4,7 +4,7 @@ Operations for research and search workflows
 import time
 import asyncio
 from agents import Runner, trace
-
+from langfuse import get_client
 
 async def compliance_research(search_queries: list[str]):
     """
@@ -139,10 +139,17 @@ async def run_compliance_agent_background(query: str):
     try:
         print(f"🔄 Starting background compliance agent for: {query[:30]}")
         
-        # Create agent (no orchestrator needed!)
         agent = ComplianceIngestionAgent()
-        with trace("Background Compliance Ingestion"):
+        langfuse = get_client()
+        with langfuse.start_as_current_span(name="Background Compliance Ingestion") as span:
+
             result = await Runner.run(agent, input=query)
+                            # Update trace once with all information
+            span.update_trace(
+                input=query,
+                output=result.final_output,
+                tags=["Background", "Update Compliance Artifact"]
+            )
         
         execution_time = time.time() - start_time
         print(f"✅ Background compliance agent completed for: {query[:30]} in {execution_time:.2f}s")

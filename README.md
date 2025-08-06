@@ -125,6 +125,37 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
 
 ---
 
+## 🔗 External Dependencies
+
+### Weaviate Vector Database
+BlueJay connects to an external Weaviate instance for knowledge base operations and compliance research.
+
+**Required Environment Variables:**
+```env
+WEAVIATE_URL=https://your-weaviate-cluster.aws.com
+WEAVIATE_API_KEY=your_api_key_here
+```
+
+**Schema Documentation:**
+- **URL Whitelist Schema** - [url_whitelist.md](https://github.com/zg915/weaviate/blob/main/url_whitelist.md)  
+  Trusted sources for compliance and certification information
+- **Compliance Artifacts Schema** - [compliance_artifacts.md](https://github.com/zg915/weaviate/blob/main/compliance_artifacts.md)  
+  Regulatory documents, standards, and certification requirements
+
+### PostgreSQL Database
+BlueJay requires a PostgreSQL database for session management and chat history.
+
+**Required Environment Variables:**
+```env
+DB_HOST=your-aws-rds-endpoint
+DB_PORT=5432
+DB_NAME=tic_research
+DB_USER=postgres
+DB_PASSWORD=your_password
+```
+
+---
+
 ## 🌐 API Usage
 
 ### **Streaming Chat**
