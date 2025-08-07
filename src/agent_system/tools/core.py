@@ -70,11 +70,11 @@ async def flashcard_web_search(search_query: str):
 
 # used by answer agent
 @function_tool
-async def prepare_flashcard(certification_name:str, context: str = None, language: str = "en"):
-    """Generate a Flashcard JSON for a single certification using the FlashcardAgent.
+async def prepare_flashcard(compliance_name:str, context: str = None, language: str = "en"):
+    """Generate a Flashcard JSON for a single compliance using the FlashcardAgent.
 
     Args:
-        certification_name: The exact name (or best-known alias) of the certification/standard to summarize.
+        compliance_name: The exact name (or best-known alias) of the compliance/standard to summarize.
         context: Optional short context (e.g., product type, target market/country) to help determine `mandatory`
                  and tailor the description. Pass None if unavailable.
         language: the language of the content inside the flashcard
@@ -84,7 +84,7 @@ async def prepare_flashcard(certification_name:str, context: str = None, languag
         classifications, mandatory, validity, official_link). The object is produced by running the FlashcardAgent.
     """
     from ..orchestration import operations
-    return await operations.run_flashcard_agent(certification_name, context, language)
+    return await operations.run_flashcard_agent(compliance_name, context, language)
 
 # used by compliance artifact ingestion agent and flashcard agent
 @function_tool
@@ -113,4 +113,17 @@ async def compliance_save(artifact: ComplianceArtifact, uuid: str = None):
         Confirmation of upsert (no additional data).
     """
     return await kb_compliance_save(artifact, uuid)
+
+@function_tool
+async def gather_compliance(search_query: str):
+    """Gather compliance requirements by searching internal databases and internet.
+
+    Args:
+        search_query: An English sentence that includes all detailed information regarding all compliance to be found.
+
+    Returns:
+        A Python list of certification names, e.g. ["FCC ID", "RoHS", ...]
+    """
+    from ..orchestration import operations
+    return await operations.run_compliance_discovery_agent(search_query)
 

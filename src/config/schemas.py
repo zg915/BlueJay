@@ -1,5 +1,5 @@
 from typing import List, Optional, Union, Literal
-from pydantic import BaseModel, Field, field_validator, RootModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 
 class Reason_Structure(BaseModel):
@@ -23,9 +23,19 @@ ClassificationTag = Literal[
 ]
 
 class Flashcard_Structure(BaseModel):
+    artifact_type: Literal[
+        "product_certification",
+        "management_system_certification", 
+        "registration",
+        "market_access_authorisation",
+        "shipment_document",
+    ] = Field(
+        ...,
+        description="One of: product_certification, management_system_certification, registration, market_access_authorisation, shipment_document."
+    )
     name: str = Field(
         ...,
-        description="Human-friendly display name (include acronym in parentheses yourself if helpful, e.g. 'CE Marking (CE)')"
+        description="Official, most formal title of the scheme"
     )
     issuing_body: str = Field(
         ...,
@@ -33,17 +43,12 @@ class Flashcard_Structure(BaseModel):
     )
     region: str = Field(
         ...,
-        description="Geographic scope where it applies (string or list; e.g. 'EU/EEA' or 'US' or 'Canada')"
+        description="Geographic scope where it applies (e.g. 'EU/EEA' or 'US' or 'Canada')"
     )
     description: str = Field(
         ...,
         max_length=400,
         description="1–2 sentence plain-language explanation of what the certification proves/ensures"
-    )
-    classifications: List[ClassificationTag] = Field(
-        ...,
-        min_length=1, max_length=5,
-        description="Overlapping tags from the allowed set above (1–3 recommended); aids filtering"
     )
     mandatory: bool = Field(
         ...,
@@ -53,37 +58,41 @@ class Flashcard_Structure(BaseModel):
         None,
         description="Typical validity/renewal info in free text (e.g., '3 years', 'No fixed expiry')"
     )
+    lead_time_days: Optional[int] = Field(
+        None,
+        description="Calendar days needed BEFORE submission (document prep, lab tests, audit booking). Null if unknown."
+    )
+    processing_time_days: Optional[int] = Field(
+        None,
+        description="Calendar days the authority takes AFTER submission to issue the certificate. Null if unknown."
+    )
+    prerequisites: Optional[List[str]] = Field(
+        None,
+        description="Other certifications/registrations that must be obtained first; empty list or null if none."
+    )
+    audit_scope: Optional[List[str]] = Field(
+        None,
+        description='High-level audit types required (e.g. ["factory_QMS", "social_compliance"]).'
+    )
+    test_items: Optional[List[str]] = Field(
+        None,
+        description='Key lab-test standards or measurements (e.g. ["EN 71-1", "EN 71-3"]).'
+    )
     official_link: str = Field(
         ...,
         description="One authoritative source URL (official site/regulation owner)"
     )
-    # Ensure no duplicate tags
-    @field_validator("classifications", mode="before")
-    def deduplicate_tags(cls, v: List[ClassificationTag]) -> List[ClassificationTag]:
-        # Normalize to list
-        if isinstance(v, str):
-            v = [v]
-        # Keep first occurrence order, drop extras
-        seen = []
-        for tag in v:
-            if tag not in seen:
-                seen.append(tag)
-        return seen  # no exceptions
 
 class Flashcards_Structure(BaseModel):
     """Wrapper model for certifications"""
     certifications: List[Flashcard_Structure]
 
-
-class Answer_Structure(BaseModel):
-    """Wrapper model for answers"""
-    answer: str
-    flashcards: List[Flashcard_Structure]
-
-class List_Structure(BaseModel):
-    """Wrapper model for List"""
-    flashcards: List[Flashcard_Structure]
-    answer: str
+class ComplianceList_Structure(BaseModel):
+    """Wrapper model for compliance discovery results"""
+    response: List[str] = Field(
+        ...,
+        description="List of compliance/certification names"
+    )
 
 
 # ComplianceArtifact model for formal compliance documentation and certification schemes
@@ -167,6 +176,27 @@ class ComplianceArtifact(BaseModel):
     application_process: Optional[str] = Field(
         None,
         description="Bullet steps or URL on how to obtain or renew (≤300 chars)"
+    )
+    
+    lead_time_days: Optional[int] = Field(
+        None,
+        description="Calendar days needed BEFORE submission (document prep, lab tests, audit booking). Null if unknown."
+    )
+    processing_time_days: Optional[int] = Field(
+        None,
+        description="Calendar days the authority takes AFTER submission to issue the certificate. Null if unknown."
+    )
+    prerequisites: Optional[List[str]] = Field(
+        None,
+        description="Other certifications/registrations that must be obtained first; empty list or null if none."
+    )
+    audit_scope: Optional[List[str]] = Field(
+        None,
+        description='High-level factory audit types required (e.g. ["factory_QMS", "social_compliance"]).'
+    )
+    test_items: Optional[List[str]] = Field(
+        None,
+        description=' List *standard references* or grouped analyte tests,  e.g. ["IEC 62321-5", "IEC 62321-7-2"] or ["heavy_metals_screen"] –  not full limit tables.'
     )
 
     official_link: str = Field(

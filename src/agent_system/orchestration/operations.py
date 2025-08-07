@@ -98,15 +98,15 @@ async def web_search(query: str, use_domain: bool = False):
         print(f"❌ domain web search failed: {e}")
         return {}
 
-async def run_flashcard_agent(certification_name: str, context: str = None, language: str = "en"):
-    """Generate flashcard for a certification using FlashcardAgent"""
+async def run_flashcard_agent(compliance_name: str, context: str = None, language: str = "en"):
+    """Generate flashcard for a compliance using FlashcardAgent"""
     from ..agents import FlashcardAgent
     
     agent = FlashcardAgent()
 
     result = await Runner.run(
         agent,
-        input=str({"certification_name": certification_name, "context": context, "language": language}),
+        input=str({"compliance_name": compliance_name, "context": context, "language": language}),
     )
 
     # Convert Pydantic model to JSON string for better parsing in streaming
@@ -172,3 +172,20 @@ async def run_compliance_agent_background(query: str):
             "error_type": type(e).__name__,
             "execution_time": f"{execution_time:.2f}s"
         }
+    
+async def run_compliance_discovery_agent(query: str):
+    """Run compliance discovery agent"""
+    from ..agents.compliance_discovery import ComplianceDiscoveryAgent
+    
+    agent = ComplianceDiscoveryAgent()
+
+    result = await Runner.run(
+        agent,
+        input=query,
+    )
+
+    # Extract the list from the structured output
+    if hasattr(result.final_output, 'response'):
+        return result.final_output.response
+    else:
+        return result.final_output

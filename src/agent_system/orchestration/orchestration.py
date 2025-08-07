@@ -9,12 +9,12 @@ from agents import Runner
 from openai.types.responses import ResponseTextDeltaEvent
 from langfuse import get_client
 
-from ..agents import CertificationAgent, AnswerAgent, TriageAgent
+from ..agents import ComplianceAgent, AnswerAgent, TriageAgent
 from ..guardrails import validate_input, input_moderation
 from src.services.database_service import (
     db_store_message, db_get_recent_context
 )
-from .streaming import AnswerStreamer, FlashcardStreamer
+# Streaming parsers no longer needed - using direct text streaming
 from . import operations
 
 
@@ -26,11 +26,11 @@ class WorkflowOrchestrator:
         self.db = None
         
         # Initialize specialized agents first
-        self.certification_agent = CertificationAgent()
+        self.compliance_agent = ComplianceAgent()
         self.answer_agent = AnswerAgent()
         
         # Initialize triage agent with handoffs to specialized agents
-        self.triage_agent = TriageAgent(self.certification_agent, self.answer_agent)
+        self.triage_agent = TriageAgent(self.compliance_agent, self.answer_agent)
         
         # Operations are now plain functions - no initialization needed
         
@@ -73,9 +73,7 @@ class WorkflowOrchestrator:
                     input=context_data.get("messages", [])
                 )
 
-                # Parsers
-                answer_streamer = AnswerStreamer()
-                flashcard_streamer = FlashcardStreamer()
+                # Direct text streaming - no parsers needed
                 global_buf = ""
                 text_response = []
                 is_cancelled = False
@@ -96,10 +94,6 @@ class WorkflowOrchestrator:
                     if event.type == "agent_updated_stream_event":
                         current_agent = event.new_agent
                         yield {"type": "processing", "response": f"Handing to {current_agent.name}"}
-                        if current_agent is self.certification_agent:
-                            yield {"type": "format", "response": "List"}
-                        elif current_agent is self.answer_agent:
-                            yield {"type": "format", "response": "Answer"}
                         continue
 
                     # 2) Tool use trigger - stream when tool is called and map call_id
@@ -140,27 +134,22 @@ class WorkflowOrchestrator:
                                         result_data = output
                                     else:
                                         result_data = json.loads(str(output))
-                                    yield {"type": "tool_result", "response": result_data}
+                                    certification_response.append(result_data)
+                                    yield {"type": "flashcard", "response": result_data}
                                 except json.JSONDecodeError:
-                                    yield {"type": "tool_result", "response": str(output)}
+                                    # yield {"type": "flashcard", "response": str(output)}
+                                    pass
                             continue
 
-                    # 4) Stream ONLY inside "answer" string and "flashcards" array
+                    # 4) Stream raw text output directly (flashcards are handled by tool results)
                     if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                         chunk = event.data.delta
-                        prev_len = len(global_buf)
                         global_buf += chunk
-
-                        # Answer chunks
-                        for txt in answer_streamer.feed(global_buf, prev_len):
-                            yield {"type": "answer_chunk", "response": txt}
-                            text_response.append(txt)
-
-                        # Flashcards
-                        for card in flashcard_streamer.feed(global_buf, prev_len, chunk):
-                            yield {"type": "flashcard", "response": card}
-                            certification_response.append(card)
-
+                        
+                        # Stream the raw text chunk directly
+                        yield {"type": "answer_chunk", "response": chunk}
+                        text_response.append(chunk)
+                        
                         continue
 
                 # Update trace once with all information
@@ -177,7 +166,7 @@ class WorkflowOrchestrator:
             else:
                 for card in certification_response:
                         asyncio.create_task(
-                            operations.run_compliance_agent_background(str(card))
+                            operations.run_compliance_agent_background(card["name"])
                             )
             assistant_message_obj = await db_store_message(db, session_id, "".join(text_response), certifications=certification_response, role="assistant", reply_to=user_message_id, is_cancelled=is_cancelled)
             print("✅ Message stored in database")

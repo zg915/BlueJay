@@ -6,7 +6,7 @@ from src.config.prompts import TRIAGE_AGENT_INSTRUCTION
 from src.config.schemas import Reason_Structure
 
 class TriageAgent(Agent):
-    def __init__(self, certification_agent, answer_agent):
+    def __init__(self, compliance_agent, answer_agent):
         def _print_reason(context, input):
             print("reason of choosing the workflow: ", input)
             
@@ -15,7 +15,7 @@ class TriageAgent(Agent):
             model="gpt-4o",
             instructions=TRIAGE_AGENT_INSTRUCTION,
             handoffs=[
-                handoff(certification_agent,
+                handoff(compliance_agent,
                         input_type=Reason_Structure,
                         on_handoff=_print_reason),
                 handoff(answer_agent,
