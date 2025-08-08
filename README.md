@@ -42,7 +42,7 @@ BlueJay is an intelligent backend system that routes user queries to specialized
 BlueJay/
 ├── src/
 │   ├── agent_system/          # Agent definitions, orchestration, session manager
-│   │   ├── agents/           # Specialized agents (Certification, Answer, Flashcard, Triage)
+│   │   ├── agents/           # Specialized agents (Compliance, Answer, Discovery, Guide, Flashcard, Triage)
 │   │   ├── orchestration/    # Main orchestrator, operations, and streaming
 │   │   │   ├── orchestration.py    # Main workflow orchestrator
 │   │   │   ├── operations.py       # Business logic operations
@@ -221,8 +221,10 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 ## 🧠 Agentic Workflow
 
 - **Triage Agent:** Classifies user queries and hands off to the appropriate specialized agent.
-- **CertificationAgent:** Handles certification/compliance queries, streams each certification as soon as available.
-- **AnswerAgent:** Handles general Q&A, streams formatted answers.
+- **ComplianceAgent:** Handles comprehensive compliance workflow management with specialized tools.
+- **AnswerAgent:** Handles general Q&A using web search and flashcard generation tools.
+- **ComplianceDiscoveryAgent:** Discovers and researches compliance artifacts from multiple sources.
+- **GuideAgent:** Generates comprehensive Mermaid flowcharts for compliance processes.
 - **FlashcardAgent:** Generates structured flashcards for certifications.
 - **Orchestrator:** Manages agent handoff, streaming, and cancellation.
 
@@ -285,34 +287,35 @@ The BlueJay codebase has been significantly refactored to improve maintainabilit
 
 ### 1. Triage Agent
 - **Role:** First point of contact for all user queries.
-- **Function:** Analyzes the user's message and determines which specialized agent (CertificationAgent or AnswerAgent) should handle the request.
+- **Function:** Analyzes the user's message and determines which specialized agent (ComplianceAgent or AnswerAgent) should handle the request.
 - **Streaming:** Streams a handoff event indicating which agent will process the query.
 - **Cancellation:** If cancelled during triage, the workflow stops before any specialized agent is invoked.
 - **Key Code:**
   - `src/agent_system/orchestration.py` — `WorkflowOrchestrator.triage_agent` (Agent instantiation and handoff logic)
   - `src/config/prompts.py` — `TRIAGE_AGENT_INSTRUCTION` (Prompt for triage agent)
 
-### 2. CertificationAgent
-- **Role:** Handles all queries related to getting a comprehensive list of certifications, compliance, and regulatory requirements.
+### 2. ComplianceAgent
+- **Role:** Handles comprehensive compliance workflow management and certification discovery.
 - **Function:**
-  - Generates multiple targeted search queries based on the user's product and scenario.
-  - Runs parallel domain and web searches for each query.
-  - Aggregates, deduplicates, and normalizes certification results.
-  - **Streaming:** As soon as each certification is parsed from the agent's output, it is streamed to the client as a separate event (certification-wise streaming).
+  - Manages complex compliance workflows using specialized tools (`gather_compliance`, `prepare_flashcard`).
+  - Coordinates with discovery agents for artifact research.
+  - Processes and structures compliance requirements systematically.
+  - **Streaming:** Streams results as they become available from tool executions.
   - **Cancellation:** If the user cancels, streaming stops immediately and a cancellation message is sent.
 - **Key Code:**
-  - `src/agent_system/agents/certification.py` — `CertificationAgent` class
-  - `src/agent_system/orchestration.py` — Certification streaming logic in `handle_user_question` and `_extract_cert_objs`
-  - `src/config/prompts.py` — `CERTIFICATION_AGENT_INSTRUCTION` (Prompt for certification agent)
-  - `src/config/schemas.py` — `Flashcards_Structure` (Output schema)
+  - `src/agent_system/agents/compliance.py` — `ComplianceAgent` class
+  - `src/agent_system/orchestration.py` — Compliance workflow streaming logic
+  - `src/config/prompts.py` — `COMPLIANCE_AGENT_INSTRUCTION` (Prompt for compliance agent)
+  - `src/config/schemas.py` — `ComplianceList_Structure` (Output schema)
 
 ### 3. AnswerAgent
 - **Role:** Handles general compliance, regulatory, and informational queries.
 - **Function:**
-  - Uses compliance and web search tools to gather information.
+  - Uses web search and flashcard generation tools to gather and structure information.
   - Synthesizes a structured, formatted answer (Markdown, headings, summary, etc.).
   - **Streaming:** Streams the answer as soon as it is generated (can be chunked or as a single message, depending on agent output).
   - **Cancellation:** If the user cancels, streaming stops and a cancellation message is sent.
+- **Tools:** `web_search`, `prepare_flashcard`
 - **Key Code:**
   - `src/agent_system/agents/answer.py` — `AnswerAgent` class
   - `src/agent_system/orchestration.py` — Streaming logic in `handle_user_question`
@@ -379,6 +382,49 @@ docker-compose down --volumes
 ---
 
 ## 📋 Recent Updates
+
+### v0.2.0 - Major Architecture Refactoring & Code Cleanup (August 2025)
+
+**Branch**: `compliance-agent` (significant refactoring from main)
+
+**Major Changes**:
+- **Complete Agent System Overhaul** (+1,120 net lines across 37 files)
+  - Added 3 new specialized agents: `ComplianceAgent`, `ComplianceDiscoveryAgent`, `GuideAgent`
+  - Removed deprecated `CertificationAgent` 
+  - Restructured agent workflow with improved tool chains
+
+**Agent Architecture Updates**:
+- **ComplianceAgent**: Comprehensive compliance workflow management (new)
+- **ComplianceDiscoveryAgent**: Artifact discovery and research (new)
+- **GuideAgent**: Mermaid flowchart generation for compliance processes (new)
+- **FlashcardAgent**: Structured certification summaries (existing, optimized)
+- **AnswerAgent**: Streamlined with `web_search` and `prepare_flashcard` tools only (updated)
+
+**Infrastructure Additions**:
+- **Docker Support**: Complete containerization with `Dockerfile` and `docker-compose.yml`
+- **Enhanced Configuration**: Expanded environment templates and configuration management
+- **Langfuse Tracing**: Full observability integration for agent monitoring
+
+**Code Quality Improvements**:
+- **Comprehensive Cleanup**: Removed 445+ lines of unused code across 9 files
+- **Dependency Resolution**: Fixed all import errors and missing function issues
+- **Import Optimization**: Eliminated unused imports system-wide
+- **Architecture Simplification**: Streamlined orchestration and operations layers
+
+**Detailed Cleanup Results**:
+- **Files Modified**: 9 core files optimized
+- **Unused Imports Removed**: All identified unused imports eliminated
+- **Functions Analyzed**: 46 functions verified for usage (all confirmed as needed)
+- **Variables Cleaned**: Removed unused variables (`global_buf`, etc.)
+- **Tool Chain Simplified**: Answer Agent now uses only `web_search` and `prepare_flashcard`
+
+**New Features**:
+- **Background Compliance Ingestion**: Automated artifact processing
+- **Enhanced Prompt System**: Comprehensive prompts for all agents (717+ lines)
+- **Structured Schemas**: Complete data model definitions (215+ lines)
+- **Service Layer Refactoring**: Self-contained services with clear boundaries
+
+---
 
 ### v0.0.1 - Agent Observability Implementation (August 2025)
 

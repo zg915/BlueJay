@@ -1,30 +1,8 @@
 from agents import function_tool
-from typing import Optional, List
-import json
-from agents import RunContextWrapper
-from typing import Any
-from agents import Agent, handoff, ItemHelpers, Runner
 from src.services.knowledgebase_service import kb_compliance_lookup, kb_compliance_save
 from src.config.schemas import ComplianceArtifact
 # Global orchestrator removed - no longer needed for clean architecture!
 
-#used by certification agent
-@function_tool
-async def search_relevant_certification(search_queries: List[str]) -> Any:
-    """Return a comprehensive raw list of certifications for four complementary queries.
-
-    Args:
-        search_queries: **Exactly four** English search strings used to search the internet and databases
-
-    Returns:
-        A JSON‑serialisable object containing the combined search results that
-        will later be deduplicated and filtered by the calling agent.
-    """
-
-    print(f"📋 Starting certification list workflow for queries: {search_queries!r}")
-
-    from ..orchestration import operations
-    return await operations.search_relevant_certification(search_queries)
 
 #used by answer agent
 @function_tool
@@ -40,33 +18,6 @@ async def web_search(search_query: str):
     from ..orchestration import operations
     return await operations.web_search(search_query)
 
-#used by answer agent
-@function_tool
-async def compliance_research(search_queries: list[str]):
-    """Perform web search and Compliance Database search to provide professional compliance answers.
-
-    Args:
-        search_queries: English search strings used to search the internet and databases
-
-    Returns:
-        A JSON‑serialisable object containing the combined search results.
-    """
-    from ..orchestration import operations
-    return await operations.compliance_research(search_queries)
-
-#used by flashcard agent
-@function_tool
-async def flashcard_web_search(search_query: str):
-    """Perform web search to provide professional certification answers tailored for preparing flashcards.
-
-    Args:
-        search_query: One English search strings used to search the internet
-
-    Returns:
-        A JSON‑serialisable object containing the combined search results for the flash card information.
-    """
-    from ..orchestration import operations
-    return await operations.certification_web_search(search_query)
 
 # used by answer agent
 @function_tool

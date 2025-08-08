@@ -2,8 +2,6 @@
 Pure orchestration coordinator for agent workflow management
 Handles agent handoffs and streaming without business logic
 """
-import asyncio
-from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Runner
 from openai.types.responses import ResponseTextDeltaEvent
@@ -15,7 +13,6 @@ from src.services.database_service import (
     db_store_message, db_get_recent_context
 )
 # Streaming parsers no longer needed - using direct text streaming
-from . import operations
 
 
 class WorkflowOrchestrator:
@@ -74,7 +71,6 @@ class WorkflowOrchestrator:
                 )
 
                 # Direct text streaming - no parsers needed
-                global_buf = ""
                 text_response = []
                 is_cancelled = False
                 certification_response = []
@@ -144,8 +140,6 @@ class WorkflowOrchestrator:
                     # 4) Stream raw text output directly (flashcards are handled by tool results)
                     if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
                         chunk = event.data.delta
-                        global_buf += chunk
-                        
                         # Stream the raw text chunk directly
                         yield {"type": "answer_chunk", "response": chunk}
                         text_response.append(chunk)
@@ -155,19 +149,21 @@ class WorkflowOrchestrator:
                 # Update trace once with all information
                 span.update_trace(
                     input=context_data.get("messages", []),
-                    output={"response": "".join(text_response), "certifications": certification_response},
+                    output="".join(text_response),
                     session_id=session_id,
-                    tags=["Main"]
+                    tags=["Main"],
+                    metadata={"certifications": certification_response}
                 )
             print("✅ Agent answer completed")
             #Save the finalized message
             if not certification_response:
                 certification_response = None
-            else:
-                for card in certification_response:
-                        asyncio.create_task(
-                            operations.run_compliance_agent_background(card["name"])
-                            )
+            #TODO: add it back
+            # else:
+            #     for card in certification_response:
+            #             asyncio.create_task(
+            #                 operations.run_compliance_agent_background(card["name"])
+            #                 )
             assistant_message_obj = await db_store_message(db, session_id, "".join(text_response), certifications=certification_response, role="assistant", reply_to=user_message_id, is_cancelled=is_cancelled)
             print("✅ Message stored in database")
             yield {"type": "completed", "response": assistant_message_obj}
