@@ -214,7 +214,7 @@ class ComplianceArtifact(BaseModel):
         description="List of all source URLs or PDFs used to populate this record (first must be official_link, all must be valid URLs)"
     )
 
-class GuideOutput(BaseModel):
+class Guide_Structure(BaseModel):
     """Schema for Guide Agent JSON output with text content and mermaid diagram"""
     text: str = Field(
         ...,

@@ -6,7 +6,7 @@ from src.agent_system.tools.core import web_search
 from src.config.prompts import GUIDE_AGENT_INSTRUCTION, GUIDE_AGENT_DESCRIPTION
 from pydantic import BaseModel, Field
 from typing import Optional
-from src.config.schemas import Flashcard_Structure, GuideOutput
+from src.config.schemas import Flashcard_Structure, Guide_Structure
 
 #TODO: change into a better name
 class GuideAgent(Agent):
@@ -16,5 +16,5 @@ class GuideAgent(Agent):
             handoff_description = GUIDE_AGENT_DESCRIPTION,
             instructions=GUIDE_AGENT_INSTRUCTION,
             tools=[web_search],
-            output_type=GuideOutput
+            output_type=Guide_Structure
         ) 
