@@ -56,10 +56,10 @@ class ResearchRequest(Base):
     status = Column(String, default='pending')
 
 class ConversationMemory(Base):
-    __tablename__ = 'conversation_memory'
+    __tablename__ = 'chat_memories'
     memory_id = Column(String, primary_key=True, server_default=func.uuid_generate_v4())
     session_id = Column(String, nullable=False)
     summary = Column(Text)
     up_to_message_order = Column(Integer, nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
     summarization_strategy = Column(String) 
