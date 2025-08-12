@@ -51,7 +51,7 @@ class WorkflowOrchestrator:
             user_message_obj = await db_store_message(db, session_id, message, role="user")
             yield {"type": "user_message", "response": user_message_obj}
             print("💾 Message stored in database")
-            user_message_id = getattr(user_message_obj, 'message_id', None)
+            user_message_id = user_message_obj["message_id"]
             if input_moderation(message):
                 assistant_message_obj = await db_store_message(db, session_id, "Sorry, I cannot help with harmful queries", role="assistant", reply_to=user_message_id)
                 yield {"type": "harmful", "response": "Sorry, I cannot help with harmful queries"}
