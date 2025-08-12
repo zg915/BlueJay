@@ -78,8 +78,8 @@ async def health():
 @app.post("/test/compliance-ingestion-agent")
 async def compliance_ingestion_agent(request: TestAgentRequest):
     """Test endpoint for background compliance ingestion agent"""
-    from src.agent_system.orchestration.operations import run_compliance_agent_background
-    return await run_compliance_agent_background(request.query)
+    from src.agent_system.orchestration.operations import background_run_compliance_ingestion
+    return await background_run_compliance_ingestion(request.query)
 
 @app.get("/")
 async def root():

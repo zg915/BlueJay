@@ -105,6 +105,19 @@ async def db_get_recent_context(db: AsyncSession, session_id: str, chat_length: 
 
     formatted_messages = []
     for msg in list(reversed(messages)):
+        if msg.role == "assistant" and msg.certifications:
+            formatted_messages.append({
+                "role": "assistant",
+                "content": f"""<flashcard_context version="1"
+                   asof="{datetime.datetime.now().isoformat()}Z"
+                   source="db"
+                   count="{len(msg.certifications)}"
+                   schema="mangrove:flashcard_context:v1">
+{{
+  "flashcards": {msg.certifications}
+}}
+</flashcard_context>"""
+            })
         formatted_messages.append({
             "role": msg.role,
             "content": msg.content,
@@ -115,3 +128,6 @@ async def db_get_recent_context(db: AsyncSession, session_id: str, chat_length: 
         "messages": formatted_messages,
         "message_count": len(formatted_messages),
     }
+
+async def db_update_memory(db: AsyncSession, session_id:str, summary:str, message_order: int):
+    return

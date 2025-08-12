@@ -46,7 +46,7 @@ async def run_flashcard_agent(compliance_name: str, context: str = None, languag
         # Fallback to regular string conversion
         return str(final_output)
 
-async def run_compliance_agent_background(query: str):
+async def background_run_compliance_ingestion(query: str):
     """
     Run background compliance ingestion agent
     

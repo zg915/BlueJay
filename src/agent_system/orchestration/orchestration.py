@@ -57,7 +57,7 @@ class WorkflowOrchestrator:
                 return
             print("✅ Input moderation passed")
             #TODO: add back full context
-            context_data = await db_get_recent_context(db, session_id, 1)
+            context_data = await db_get_recent_context(db, session_id, 5)
             print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("\n🎯 Running triage agent with handoffs...")
 
@@ -158,11 +158,12 @@ class WorkflowOrchestrator:
             #Save the finalized message
             if not certification_response:
                 certification_response = None
+            else:
+                print(f"📋 Found {len(certification_response)} certifications")
             #TODO: add it back
-            # else:
             #     for card in certification_response:
             #             asyncio.create_task(
-            #                 operations.run_compliance_agent_background(card["name"])
+            #                 operations.background_run_compliance_ingestion(card["name"])
             #                 )
             assistant_message_obj = await db_store_message(db, session_id, "".join(text_response), certifications=certification_response, role="assistant", reply_to=user_message_id, is_cancelled=is_cancelled)
             print("✅ Message stored in database")

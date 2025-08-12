@@ -11,7 +11,7 @@ class ComplianceDiscoveryAgent(Agent):
     def __init__(self):
         super().__init__(
             name="Compliance Discovery Agent",
-            model="gpt-5", 
+            model="gpt-4.1", 
             handoff_description = COMPLIANCE_DISCOVERY_AGENT_DESCRIPTION,
             instructions=COMPLIANCE_DISCOVERY_AGENT_INSTRUCTION,
             tools=[compliance_lookup, web_search],
