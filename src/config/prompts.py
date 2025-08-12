@@ -918,3 +918,12 @@ classDef gate fill:#f2f2f2,stroke:#a9a9a9,color:#333,stroke-dasharray:4 3;
 GUIDE_AGENT_DESCRIPTION="""
 Generates a user-friendly, well-structured compliance timeline guide for a given export/import scenario. It uses available flashcard data for all relevant certifications, arranges them into logical phases (registrations, testing/certifications, conformity documentation, shipment), and outputs a visually intuitive Mermaid-based flowchart with clickable links, styled for clarity and easy understanding.
 """
+
+#TODO: make it better
+CONTEXT_SUMMARY_PROMPT="""
+As a professional summarizer, create a concise and comprehensive summary of the following conversation. Respect these rules:
+1. Summarize with clarity and conciseness, yet remain thorough.
+2. Include main ideas, decisions, action items, and any constraints.
+3. Rely strictly on the provided text—no added info.
+4. Deliver as one clear paragraph.
+"""

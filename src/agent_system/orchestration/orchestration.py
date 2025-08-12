@@ -2,6 +2,7 @@
 Pure orchestration coordinator for agent workflow management
 Handles agent handoffs and streaming without business logic
 """
+import asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 from agents import Runner
 from openai.types.responses import ResponseTextDeltaEvent
@@ -12,6 +13,7 @@ from ..guardrails import validate_input, input_moderation
 from src.services.database_service import (
     db_store_message, db_get_recent_context
 )
+from . import operations
 # Streaming parsers no longer needed - using direct text streaming
 
 
@@ -48,7 +50,7 @@ class WorkflowOrchestrator:
             print("✅ Input validation passed")
             user_message_obj = await db_store_message(db, session_id, message, role="user")
             yield {"type": "user_message", "response": user_message_obj}
-            print("✅ Message stored in database")
+            print("💾 Message stored in database")
             user_message_id = getattr(user_message_obj, 'message_id', None)
             if input_moderation(message):
                 assistant_message_obj = await db_store_message(db, session_id, "Sorry, I cannot help with harmful queries", role="assistant", reply_to=user_message_id)
@@ -59,7 +61,7 @@ class WorkflowOrchestrator:
             #TODO: add back full context
             context_data = await db_get_recent_context(db, session_id, 5)
             print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
-            print("\n🎯 Running triage agent with handoffs...")
+            print("🎯 Running triage agent with handoffs...")
 
             # Create Langfuse span 
             langfuse = get_client()
@@ -165,9 +167,17 @@ class WorkflowOrchestrator:
             #             asyncio.create_task(
             #                 operations.background_run_compliance_ingestion(card["name"])
             #                 )
+
+            #save assistant message
             assistant_message_obj = await db_store_message(db, session_id, "".join(text_response), certifications=certification_response, role="assistant", reply_to=user_message_id, is_cancelled=is_cancelled)
-            print("✅ Message stored in database")
+            print("💾 Message stored in database")
             yield {"type": "completed", "response": assistant_message_obj}
+
+            # Trigger conversation summarization every 6 messages (3 rounds)
+            if assistant_message_obj["message_order"] % 6 == 0:
+                asyncio.create_task(
+                    operations.background_run_context_summarization(session_id, assistant_message_obj["message_order"])
+                ) 
             return
 
         except Exception as e:

@@ -2,8 +2,13 @@
 Operations for research and search workflows
 """
 import time
+import traceback
 from agents import Runner
 from langfuse import get_client
+from openai import AsyncOpenAI
+from sqlalchemy.future import select
+from src.services.database_service import db_get_recent_context, db_update_memory, db_get_latest_memory
+from src.config.prompts import CONTEXT_SUMMARY_PROMPT
 
 
 async def web_search(query: str, use_domain: bool = False):
@@ -114,3 +119,87 @@ async def run_compliance_discovery_agent(query: str):
         return result.final_output.response
     else:
         return result.final_output
+
+async def background_run_context_summarization(session_id: str, latest_message_order: int):
+    """
+    Background conversation summarization - runs every 6 messages (3 rounds)
+    
+    Args:
+        session_id: Session to summarize
+        latest_message_order: The latest message order that triggered this summarization
+    
+    Returns:
+        Boolean whether message saved
+    """
+    from src.services import AsyncSessionLocal
+    
+    start_time = time.time()
+    
+    # Create our own database session for this background task
+    async with AsyncSessionLocal() as db:
+        try:
+            # 1) Find out what the most current memory is up until
+            latest_memory = await db_get_latest_memory(db, session_id)
+            start_from_order = latest_memory.up_to_message_order + 1 if latest_memory else 1
+            
+            # 2) Calculate how many new messages we have
+            messages_to_summarize = latest_message_order - start_from_order + 1
+            
+            if messages_to_summarize < 6:
+                return False
+                
+            # 3) Get context for everything in between (from last summary to current message)
+            context_data = await db_get_recent_context(db, session_id, messages_to_summarize)
+            messages = [{"role": "system", "content": CONTEXT_SUMMARY_PROMPT}] + context_data["messages"]
+            # 4) Call OpenAI for summarization
+            client = AsyncOpenAI()
+            try:
+                response = await client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=messages,
+                    temperature=0.3
+                )
+            finally:
+                await client.close()
+            
+            summary = response.choices[0].message.content
+            
+            # 5) Store the summary and update database (with transaction safety)
+            try:
+                # Store the summary using the latest message order passed to us
+                memory_obj = await db_update_memory(db, session_id, summary, latest_message_order)
+                
+                # Mark the messages we just summarized as is_summarized = True
+                from sqlalchemy import update
+                from src.services.models import ChatSession, ChatMessage
+                await db.execute(
+                    update(ChatMessage)
+                    .where(ChatMessage.session_id == session_id)
+                    .where(ChatMessage.message_order >= start_from_order)
+                    .where(ChatMessage.message_order <= latest_message_order)
+                    .values(is_summarized=True)
+                )
+                
+                # Update the chat_session to point to this latest memory
+                await db.execute(
+                    update(ChatSession)
+                    .where(ChatSession.session_id == session_id)
+                    .values(current_memory_id=memory_obj.memory_id)
+                )
+                
+                await db.commit()
+                
+            except Exception as db_error:
+                await db.rollback()
+                raise
+            
+            execution_time = time.time() - start_time
+            print(f"☁️ Conversation summarization completed in {execution_time:.2f}s for session: {session_id}")
+            return True
+            
+        except Exception as e:
+            execution_time = time.time() - start_time
+            print(f"⚠️ Conversation summarization failed for session {session_id}: {type(e).__name__}: {e} (took {execution_time:.2f}s)")
+            print(f"🔍 Full traceback: {traceback.format_exc()}")
+            
+            return False
