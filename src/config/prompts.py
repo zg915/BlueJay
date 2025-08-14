@@ -173,15 +173,15 @@ Return ONLY these keys:
 | `artifact_type` | str | choose from ["product_certification", "management_system_certification", "registration", "market_access_authorisation", "shipment_document" |
 | `name` | str | Official scheme title |
 | `issuing_body` | str | Authority or organisation |
-| `region` | str \| [str,…] | Primary geographic scope |
+| `region` | str \\| [str,…] | Primary geographic scope |
 | `description` | str | ≤ 2 sentences (≤ 400 chars) |
 | `mandatory` | bool | True = legally required |
-| `validity` | str \| null | e.g. “3 years” or null |
-| `lead_time_days` | int \| null | Prep days *before* submission |
-| `processing_time_days` | int \| null | Authority days *after* submission |
-| `prerequisites` | [str] \| null | Other certs needed first |
-| `audit_scope` | [str] \| null | High-level *factory audit modules* the scheme requires, e.g. ["factory_QMS", "on_site_annual_audit"]. Omit documentation-only modules like “technical_documentation”.|
-| `test_items` | [str] \| null | List *standard references* or grouped analyte tests, e.g. ["IEC 62321-5", "IEC 62321-7-2"] or ["heavy_metals_screen"] – not full limit tables.|
+| `validity` | str \\| null | e.g. "3 years" or null |
+| `lead_time_days` | int \\| null | Prep days *before* submission |
+| `processing_time_days` | int \\| null | Authority days *after* submission |
+| `prerequisites` | [str] \\| null | Other certs needed first |
+| `audit_scope` | [str] \\| null | High-level *factory audit modules* the scheme requires, e.g. ["factory_QMS", "on_site_annual_audit"]. Omit documentation-only modules like "technical_documentation".|
+| `test_items` | [str] \\| null | List *standard references* or grouped analyte tests, e.g. ["IEC 62321-5", "IEC 62321-7-2"] or ["heavy_metals_screen"] – not full limit tables.|
 | `official_link` | str (URL) | Most authoritative URL |
 
 ≈
@@ -330,11 +330,11 @@ Populate each saved object **exactly** as specified below.
 - **application_process** (string)  
   - Detailed Bullet steps or a URL explaining how to obtain or renew the scheme.
 
-- **lead_time_days** (integer \| null)  
+- **lead_time_days** (integer \\| null)  
   - Calendar days the applicant typically needs *before* submitting the application (document collection, lab testing, audit booking).  
   - Use `null` if no reliable data.
 
-- **processing_time_days** (integer \| null)  
+- **processing_time_days** (integer \\| null)  
   - Calendar days the authority or scheme owner usually takes *after* submission to issue the certificate/permit.  
   - Use `null` if no reliable data.
 

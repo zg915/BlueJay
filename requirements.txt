@@ -14,8 +14,8 @@ openai-agents
 aiohttp
 ijson
 voyageai
-weaviate-client
-protobuf>=3.20.0,<4.21.0
+weaviate-client==4.15.4
+protobuf>=5.26.1
 langfuse
 logfire
 nest_asyncio
