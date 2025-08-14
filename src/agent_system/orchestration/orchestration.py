@@ -59,7 +59,7 @@ class WorkflowOrchestrator:
                 return
             print("✅ Input moderation passed")
             #TODO: add back full context
-            context_data = await db_get_recent_context(db, session_id, 5)
+            context_data = await db_get_recent_context(db, session_id, 1)
             print(f"📚 Retrieved last {context_data.get('message_count', 0)} messages")
             print("🎯 Running triage agent with handoffs...")
 
