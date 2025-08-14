@@ -15,7 +15,7 @@ aiohttp
 ijson
 voyageai
 weaviate-client
-protobuf>=5.29.0,<5.30.0
+protobuf==5.29.2
 langfuse
 logfire
 nest_asyncio
