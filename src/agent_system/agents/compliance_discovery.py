@@ -1,7 +1,8 @@
 """
 ComplianceDiscoveryAgent definition
 """
-from agents import Agent
+from agents import Agent, ModelSettings
+from openai.types.shared import Reasoning
 from src.agent_system.tools.core import compliance_lookup, web_search
 from src.config.prompts import COMPLIANCE_DISCOVERY_AGENT_INSTRUCTION, COMPLIANCE_DISCOVERY_AGENT_DESCRIPTION
 from pydantic import BaseModel
@@ -11,7 +12,10 @@ class ComplianceDiscoveryAgent(Agent):
     def __init__(self):
         super().__init__(
             name="Compliance Discovery Agent",
-            model="gpt-4.1", 
+            model="gpt-5",
+            model_settings=ModelSettings(
+                reasoning=Reasoning(effort="minimal"),
+            ),
             handoff_description = COMPLIANCE_DISCOVERY_AGENT_DESCRIPTION,
             instructions=COMPLIANCE_DISCOVERY_AGENT_INSTRUCTION,
             tools=[compliance_lookup, web_search],
